@@ -25,9 +25,11 @@ export default function LibraryPage() {
   const { user, loading } = useAuth();
   const [selectedClient, setSelectedClient] = useState("tom");
   const [selectedFolder, setSelectedFolder] = useState("all");
+  const [selectedDriveFolder, setSelectedDriveFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [clips, setClips] = useState<Clip[]>([]);
+  const [clientCounts, setClientCounts] = useState<Record<string, number>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
@@ -37,12 +39,25 @@ export default function LibraryPage() {
   const { data: session } = useSession();
 
   useEffect(() => {
-    if (user) loadClips();
+    if (user) {
+      setSelectedDriveFolder(null);
+      loadClips();
+      loadAllCounts();
+    }
   }, [selectedClient, user]);
 
   async function loadClips() {
     const data = await getClipsByClient(selectedClient);
     setClips(data);
+  }
+
+  async function loadAllCounts() {
+    const counts: Record<string, number> = {};
+    for (const client of clients) {
+      const data = await getClipsByClient(client.id);
+      counts[client.id] = data.length;
+    }
+    setClientCounts(counts);
   }
 
   async function handleFiles(files: FileList) {
@@ -129,12 +144,19 @@ export default function LibraryPage() {
   if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;
   if (!user) return null;
 
+  // Extract unique Drive folders from clips
+  const driveFolders = Array.from(
+    new Set(clips.map(c => (c as Clip & { path?: string }).path || "").filter(Boolean))
+  ).sort();
+
   const filteredClips = clips.filter((clip) => {
-    const matchesFolder = selectedFolder === "all" || clip.folder === selectedFolder;
+    const matchesWorkflow = selectedFolder === "all" || clip.folder === selectedFolder;
+    const clipPath = (clip as Clip & { path?: string }).path || "";
+    const matchesDriveFolder = !selectedDriveFolder || clipPath === selectedDriveFolder || clipPath.startsWith(selectedDriveFolder + "/");
     const matchesSearch = searchQuery === "" ||
       clip.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       clip.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesFolder && matchesSearch;
+    return matchesWorkflow && matchesDriveFolder && matchesSearch;
   });
 
   const currentClient = clients.find(c => c.id === selectedClient)!;
@@ -191,7 +213,7 @@ export default function LibraryPage() {
                 </div>
                 <div className="text-left">
                   <div className="text-sm font-medium">{client.name}</div>
-                  <div className="text-xs text-white/40">{folderCounts.all} clips</div>
+                  <div className="text-xs text-white/40">{clientCounts[client.id] ?? "..."} clips</div>
                 </div>
               </button>
             ))}
@@ -265,11 +287,53 @@ export default function LibraryPage() {
             <p className="text-white/30 text-xs mt-1">MP4, MOV, AVI supported · Auto-tagged with AI on upload</p>
           </div>
 
+          {/* Folder Browser + Clips Grid */}
+          <div className="flex gap-6">
+            {/* Drive Folder Panel */}
+            {driveFolders.length > 0 && (
+              <div className="w-56 shrink-0">
+                <p className="text-xs text-white/40 font-medium uppercase tracking-wider mb-2">Drive Folders</p>
+                <div className="space-y-0.5">
+                  <button
+                    onClick={() => setSelectedDriveFolder(null)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between ${
+                      !selectedDriveFolder ? "bg-orange-500/20 text-orange-400" : "text-white/50 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2"><span>📁</span> All folders</span>
+                    <span className="text-white/30">{clips.length}</span>
+                  </button>
+                  {driveFolders.map((folder) => {
+                    const count = clips.filter(c => {
+                      const p = (c as Clip & { path?: string }).path || "";
+                      return p === folder || p.startsWith(folder + "/");
+                    }).length;
+                    const depth = folder.split("/").length - 1;
+                    const label = folder.split("/").pop()!;
+                    return (
+                      <button
+                        key={folder}
+                        onClick={() => setSelectedDriveFolder(folder === selectedDriveFolder ? null : folder)}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between ${
+                          selectedDriveFolder === folder ? "bg-orange-500/20 text-orange-400" : "text-white/50 hover:bg-white/5 hover:text-white"
+                        }`}
+                        style={{ paddingLeft: `${12 + depth * 12}px` }}
+                      >
+                        <span className="flex items-center gap-2 truncate"><span>📂</span> <span className="truncate">{label}</span></span>
+                        <span className="text-white/30 shrink-0">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
           {/* Clips Grid */}
-          <div>
+          <div className="flex-1">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-medium text-white/60">
                 {filteredClips.length} clips for <span className="text-white">{currentClient.name}</span>
+                {selectedDriveFolder && <span className="text-orange-400"> / {selectedDriveFolder.split("/").pop()}</span>}
               </h2>
             </div>
 
@@ -330,6 +394,7 @@ export default function LibraryPage() {
               </div>
             )}
           </div>
+          </div> {/* end folder browser + clips grid flex */}
         </div>
       </div>
 

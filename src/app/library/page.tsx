@@ -1,26 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
+import { saveClip, getClipsByClient, Clip } from "@/lib/clips";
 
 const clients = [
   { id: "tom", name: "Tom Dahan", handle: "@tom.dahan", color: "from-orange-500 to-red-600", avatar: "T" },
   { id: "aviv", name: "Aviv Bushari", handle: "@aviv.bushari", color: "from-blue-500 to-purple-600", avatar: "A" },
 ];
 
-const mockClips = [
-  { id: 1, client: "tom", name: "dirt_bike_jump_01.mp4", tags: ["outdoor", "high-energy", "extreme sport", "jump"], folder: "raw", size: "84MB", duration: "0:12", thumb: "🏍️" },
-  { id: 2, client: "tom", name: "snowboard_flip_02.mp4", tags: ["outdoor", "high-energy", "snowboard", "flip"], folder: "raw", size: "120MB", duration: "0:08", thumb: "🏂" },
-  { id: 3, client: "tom", name: "running_beach_03.mp4", tags: ["outdoor", "medium-energy", "running", "beach"], folder: "edited", size: "45MB", duration: "0:15", thumb: "🏃" },
-  { id: 4, client: "tom", name: "back_exercise_04.mp4", tags: ["indoor", "low-energy", "exercise", "recovery"], folder: "approved", size: "62MB", duration: "0:20", thumb: "💪" },
-  { id: 5, client: "tom", name: "drift_car_05.mp4", tags: ["outdoor", "high-energy", "car", "drift"], folder: "raw", size: "98MB", duration: "0:10", thumb: "🚗" },
-  { id: 6, client: "aviv", name: "trading_desk_01.mp4", tags: ["indoor", "low-energy", "trading", "desk"], folder: "raw", size: "55MB", duration: "0:18", thumb: "📈" },
-  { id: 7, client: "aviv", name: "ironman_run_02.mp4", tags: ["outdoor", "high-energy", "ironman", "running"], folder: "edited", size: "110MB", duration: "0:22", thumb: "🏃" },
-  { id: 8, client: "aviv", name: "ironman_swim_03.mp4", tags: ["outdoor", "high-energy", "ironman", "swimming"], folder: "raw", size: "95MB", duration: "0:16", thumb: "🏊" },
-];
-
 const folders = ["all", "raw", "edited", "approved"];
+
 const tagColors: Record<string, string> = {
   "high-energy": "bg-red-500/20 text-red-400",
   "low-energy": "bg-blue-500/20 text-blue-400",
@@ -35,33 +26,83 @@ export default function LibraryPage() {
   const [selectedFolder, setSelectedFolder] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [clips, setClips] = useState<Clip[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string>("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (user) loadClips();
+  }, [selectedClient, user]);
+
+  async function loadClips() {
+    const data = await getClipsByClient(selectedClient);
+    setClips(data);
+  }
+
+  async function handleFiles(files: FileList) {
+    if (!files.length) return;
+    setUploading(true);
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setUploadProgress(`Uploading ${i + 1}/${files.length}: ${file.name}`);
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("clientId", selectedClient);
+      formData.append("folder", selectedFolder === "all" ? "raw" : selectedFolder);
+
+      try {
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const data = await res.json();
+
+        if (data.success) {
+          await saveClip({
+            clientId: selectedClient,
+            name: file.name,
+            videoId: data.videoId,
+            bunnyUrl: data.bunnyUrl,
+            thumbnailUrl: data.thumbnailUrl,
+            folder: selectedFolder === "all" ? "raw" : selectedFolder as "raw" | "edited" | "approved",
+            tags: [],
+            size: `${(file.size / 1024 / 1024).toFixed(1)}MB`,
+          });
+        }
+      } catch (err) {
+        console.error("Upload failed:", err);
+      }
+    }
+
+    setUploading(false);
+    setUploadProgress("");
+    loadClips();
+  }
 
   if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;
   if (!user) return null;
 
-  const filteredClips = mockClips.filter((clip) => {
-    const matchesClient = clip.client === selectedClient;
+  const filteredClips = clips.filter((clip) => {
     const matchesFolder = selectedFolder === "all" || clip.folder === selectedFolder;
     const matchesSearch = searchQuery === "" ||
       clip.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       clip.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesClient && matchesFolder && matchesSearch;
+    return matchesFolder && matchesSearch;
   });
 
   const currentClient = clients.find(c => c.id === selectedClient)!;
 
   const folderCounts = {
-    all: mockClips.filter(c => c.client === selectedClient).length,
-    raw: mockClips.filter(c => c.client === selectedClient && c.folder === "raw").length,
-    edited: mockClips.filter(c => c.client === selectedClient && c.folder === "edited").length,
-    approved: mockClips.filter(c => c.client === selectedClient && c.folder === "approved").length,
+    all: clips.length,
+    raw: clips.filter(c => c.folder === "raw").length,
+    edited: clips.filter(c => c.folder === "edited").length,
+    approved: clips.filter(c => c.folder === "approved").length,
   };
 
   return (
     <div className="flex h-screen bg-[#0a0a0f] text-white overflow-hidden">
       <Sidebar user={user} />
 
-      {/* Main */}
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 z-10 bg-[#0a0a0f]/80 backdrop-blur border-b border-white/10 px-8 py-4 flex items-center justify-between">
@@ -69,9 +110,20 @@ export default function LibraryPage() {
             <h1 className="text-xl font-bold">B-Roll Library</h1>
             <p className="text-xs text-white/40">Manage and search footage per client</p>
           </div>
-          <button className="flex items-center gap-2 bg-orange-500 hover:bg-orange-400 transition-colors text-white text-sm font-medium px-4 py-2 rounded-lg">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 bg-orange-500 hover:bg-orange-400 transition-colors text-white text-sm font-medium px-4 py-2 rounded-lg"
+          >
             <span>+</span> Upload Clips
           </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*"
+            multiple
+            className="hidden"
+            onChange={(e) => e.target.files && handleFiles(e.target.files)}
+          />
         </div>
 
         <div className="p-8 space-y-6">
@@ -97,12 +149,11 @@ export default function LibraryPage() {
               </button>
             ))}
 
-            {/* Google Drive Import Button */}
             <button className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 bg-[#111118] hover:border-green-500/30 hover:bg-green-500/5 transition-all ml-auto">
               <span className="text-xl">📁</span>
               <div className="text-left">
                 <div className="text-sm font-medium">Import from Drive</div>
-                <div className="text-xs text-white/40">Google Drive sync</div>
+                <div className="text-xs text-white/40">Coming soon</div>
               </div>
             </button>
           </div>
@@ -129,7 +180,7 @@ export default function LibraryPage() {
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-sm">🔍</span>
               <input
                 type="text"
-                placeholder="Search by name or tag (e.g. 'jump', 'outdoor', 'high-energy')"
+                placeholder="Search by name or tag..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[#111118] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 transition-colors"
@@ -137,51 +188,62 @@ export default function LibraryPage() {
             </div>
           </div>
 
+          {/* Upload Progress */}
+          {uploading && (
+            <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex items-center gap-3">
+              <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-orange-300">{uploadProgress}</p>
+            </div>
+          )}
+
           {/* Drop Zone */}
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); }}
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
-              dragOver
-                ? "border-orange-500 bg-orange-500/10"
-                : "border-white/10 hover:border-white/20"
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
+              dragOver ? "border-orange-500 bg-orange-500/10" : "border-white/10 hover:border-white/20"
             }`}
           >
             <div className="text-3xl mb-2">🎬</div>
-            <p className="text-white/50 text-sm">Drag & drop video clips here</p>
+            <p className="text-white/50 text-sm">Drag & drop video clips here or click to browse</p>
             <p className="text-white/30 text-xs mt-1">MP4, MOV, AVI supported · Auto-tagged with AI on upload</p>
           </div>
 
           {/* Clips Grid */}
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-medium text-white/60">{filteredClips.length} clips for <span className={`text-white`}>{currentClient.name}</span></h2>
+              <h2 className="text-sm font-medium text-white/60">
+                {filteredClips.length} clips for <span className="text-white">{currentClient.name}</span>
+              </h2>
             </div>
 
             {filteredClips.length === 0 ? (
               <div className="text-center py-16 text-white/30">
                 <div className="text-4xl mb-3">🎬</div>
-                <p>No clips found</p>
+                <p>No clips yet — upload your first B-roll above</p>
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-4">
                 {filteredClips.map((clip) => (
                   <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden hover:border-orange-500/30 transition-all group">
-                    {/* Thumbnail */}
-                    <div className="aspect-video bg-white/5 flex items-center justify-center text-4xl relative">
-                      {clip.thumb}
+                    <div className="aspect-video bg-white/5 flex items-center justify-center relative overflow-hidden">
+                      {clip.thumbnailUrl ? (
+                        <img src={clip.thumbnailUrl} alt={clip.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-4xl">🎬</span>
+                      )}
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                        <button className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">▶</button>
+                        <a href={clip.bunnyUrl} target="_blank" rel="noopener noreferrer"
+                          className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">▶</a>
                       </div>
-                      <span className="absolute bottom-2 right-2 text-xs bg-black/60 px-1.5 py-0.5 rounded text-white/80">{clip.duration}</span>
                       <span className={`absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded capitalize ${
                         clip.folder === "approved" ? "bg-green-500/80" :
                         clip.folder === "edited" ? "bg-blue-500/80" : "bg-white/20"
                       }`}>{clip.folder}</span>
                     </div>
 
-                    {/* Info */}
                     <div className="p-3">
                       <p className="text-xs font-medium truncate mb-2">{clip.name}</p>
                       <div className="flex flex-wrap gap-1 mb-2">
@@ -190,8 +252,11 @@ export default function LibraryPage() {
                             {tag}
                           </span>
                         ))}
+                        {clip.tags.length === 0 && (
+                          <span className="text-xs text-white/20">No tags yet</span>
+                        )}
                       </div>
-                      <p className="text-xs text-white/30">{clip.size}</p>
+                      {clip.size && <p className="text-xs text-white/30">{clip.size}</p>}
                     </div>
                   </div>
                 ))}

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { saveClip, getClipsByClient, Clip } from "@/lib/clips";
+import { signIn, useSession } from "next-auth/react";
 
 const clients = [
   { id: "tom", name: "Tom Dahan", handle: "@tom.dahan", color: "from-orange-500 to-red-600", avatar: "T" },
@@ -29,7 +30,11 @@ export default function LibraryPage() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
+  const [syncing, setSyncing] = useState(false);
+  const [showDriveModal, setShowDriveModal] = useState(false);
+  const [driveFolderId, setDriveFolderId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { data: session } = useSession();
 
   useEffect(() => {
     if (user) loadClips();
@@ -77,6 +82,44 @@ export default function LibraryPage() {
     setUploading(false);
     setUploadProgress("");
     loadClips();
+  }
+
+  async function handleDriveSync() {
+    if (!session?.accessToken) {
+      await signIn("google");
+      return;
+    }
+    if (!driveFolderId) return;
+
+    setSyncing(true);
+    setShowDriveModal(false);
+
+    try {
+      const res = await fetch("/api/drive-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accessToken: session.accessToken,
+          folderId: driveFolderId,
+          clientId: selectedClient,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        for (const file of data.files) {
+          await saveClip(file);
+        }
+        await loadClips();
+        alert(`✅ Synced ${data.synced} videos from Google Drive!`);
+      }
+    } catch (err) {
+      console.error("Sync error:", err);
+      alert("Sync failed. Please try again.");
+    } finally {
+      setSyncing(false);
+    }
   }
 
   if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;
@@ -149,11 +192,18 @@ export default function LibraryPage() {
               </button>
             ))}
 
-            <button className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 bg-[#111118] hover:border-green-500/30 hover:bg-green-500/5 transition-all ml-auto">
+            <button
+              onClick={() => setShowDriveModal(true)}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 bg-[#111118] hover:border-green-500/30 hover:bg-green-500/5 transition-all ml-auto"
+            >
               <span className="text-xl">📁</span>
               <div className="text-left">
-                <div className="text-sm font-medium">Import from Drive</div>
-                <div className="text-xs text-white/40">Coming soon</div>
+                <div className="text-sm font-medium">
+                  {syncing ? "Syncing..." : "Import from Drive"}
+                </div>
+                <div className="text-xs text-white/40">
+                  {session?.accessToken ? "Connected" : "Click to connect"}
+                </div>
               </div>
             </button>
           </div>
@@ -265,6 +315,56 @@ export default function LibraryPage() {
           </div>
         </div>
       </div>
+
+      {/* Drive Sync Modal */}
+      {showDriveModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-[#111118] border border-white/10 rounded-2xl p-8 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-2">Import from Google Drive</h3>
+            <p className="text-white/50 text-sm mb-6">
+              Paste the Google Drive folder ID for <span className="text-orange-400">{clients.find(c => c.id === selectedClient)?.name}</span>.
+              You can find it in the folder URL: drive.google.com/drive/folders/<span className="text-white/70">FOLDER_ID</span>
+            </p>
+
+            {!session?.accessToken ? (
+              <button
+                onClick={() => signIn("google")}
+                className="w-full bg-white text-black font-semibold py-3 rounded-lg text-sm flex items-center justify-center gap-2 mb-4"
+              >
+                <span>🔗</span> Connect Google Account
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 mb-4 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+                <span className="text-green-400 text-xs">✓ Google account connected</span>
+              </div>
+            )}
+
+            <input
+              type="text"
+              placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"
+              value={driveFolderId}
+              onChange={(e) => setDriveFolderId(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-sm placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 mb-4"
+            />
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDriveModal(false)}
+                className="flex-1 border border-white/10 text-white/60 py-2.5 rounded-lg text-sm hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDriveSync}
+                disabled={!driveFolderId || !session?.accessToken || syncing}
+                className="flex-1 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors"
+              >
+                {syncing ? "Syncing..." : "Start Sync"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

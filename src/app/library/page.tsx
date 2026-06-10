@@ -1,0 +1,205 @@
+"use client";
+
+import { useState } from "react";
+import { useAuth } from "@/lib/useAuth";
+import Sidebar from "@/components/Sidebar";
+
+const clients = [
+  { id: "tom", name: "Tom Dahan", handle: "@tom.dahan", color: "from-orange-500 to-red-600", avatar: "T" },
+  { id: "aviv", name: "Aviv Bushari", handle: "@aviv.bushari", color: "from-blue-500 to-purple-600", avatar: "A" },
+];
+
+const mockClips = [
+  { id: 1, client: "tom", name: "dirt_bike_jump_01.mp4", tags: ["outdoor", "high-energy", "extreme sport", "jump"], folder: "raw", size: "84MB", duration: "0:12", thumb: "🏍️" },
+  { id: 2, client: "tom", name: "snowboard_flip_02.mp4", tags: ["outdoor", "high-energy", "snowboard", "flip"], folder: "raw", size: "120MB", duration: "0:08", thumb: "🏂" },
+  { id: 3, client: "tom", name: "running_beach_03.mp4", tags: ["outdoor", "medium-energy", "running", "beach"], folder: "edited", size: "45MB", duration: "0:15", thumb: "🏃" },
+  { id: 4, client: "tom", name: "back_exercise_04.mp4", tags: ["indoor", "low-energy", "exercise", "recovery"], folder: "approved", size: "62MB", duration: "0:20", thumb: "💪" },
+  { id: 5, client: "tom", name: "drift_car_05.mp4", tags: ["outdoor", "high-energy", "car", "drift"], folder: "raw", size: "98MB", duration: "0:10", thumb: "🚗" },
+  { id: 6, client: "aviv", name: "trading_desk_01.mp4", tags: ["indoor", "low-energy", "trading", "desk"], folder: "raw", size: "55MB", duration: "0:18", thumb: "📈" },
+  { id: 7, client: "aviv", name: "ironman_run_02.mp4", tags: ["outdoor", "high-energy", "ironman", "running"], folder: "edited", size: "110MB", duration: "0:22", thumb: "🏃" },
+  { id: 8, client: "aviv", name: "ironman_swim_03.mp4", tags: ["outdoor", "high-energy", "ironman", "swimming"], folder: "raw", size: "95MB", duration: "0:16", thumb: "🏊" },
+];
+
+const folders = ["all", "raw", "edited", "approved"];
+const tagColors: Record<string, string> = {
+  "high-energy": "bg-red-500/20 text-red-400",
+  "low-energy": "bg-blue-500/20 text-blue-400",
+  "medium-energy": "bg-yellow-500/20 text-yellow-400",
+  "outdoor": "bg-green-500/20 text-green-400",
+  "indoor": "bg-purple-500/20 text-purple-400",
+};
+
+export default function LibraryPage() {
+  const { user, loading } = useAuth();
+  const [selectedClient, setSelectedClient] = useState("tom");
+  const [selectedFolder, setSelectedFolder] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+
+  if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;
+  if (!user) return null;
+
+  const filteredClips = mockClips.filter((clip) => {
+    const matchesClient = clip.client === selectedClient;
+    const matchesFolder = selectedFolder === "all" || clip.folder === selectedFolder;
+    const matchesSearch = searchQuery === "" ||
+      clip.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      clip.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesClient && matchesFolder && matchesSearch;
+  });
+
+  const currentClient = clients.find(c => c.id === selectedClient)!;
+
+  const folderCounts = {
+    all: mockClips.filter(c => c.client === selectedClient).length,
+    raw: mockClips.filter(c => c.client === selectedClient && c.folder === "raw").length,
+    edited: mockClips.filter(c => c.client === selectedClient && c.folder === "edited").length,
+    approved: mockClips.filter(c => c.client === selectedClient && c.folder === "approved").length,
+  };
+
+  return (
+    <div className="flex h-screen bg-[#0a0a0f] text-white overflow-hidden">
+      <Sidebar user={user} />
+
+      {/* Main */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Header */}
+        <div className="sticky top-0 z-10 bg-[#0a0a0f]/80 backdrop-blur border-b border-white/10 px-8 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">B-Roll Library</h1>
+            <p className="text-xs text-white/40">Manage and search footage per client</p>
+          </div>
+          <button className="flex items-center gap-2 bg-orange-500 hover:bg-orange-400 transition-colors text-white text-sm font-medium px-4 py-2 rounded-lg">
+            <span>+</span> Upload Clips
+          </button>
+        </div>
+
+        <div className="p-8 space-y-6">
+          {/* Client Selector */}
+          <div className="flex gap-3">
+            {clients.map((client) => (
+              <button
+                key={client.id}
+                onClick={() => setSelectedClient(client.id)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
+                  selectedClient === client.id
+                    ? "border-orange-500/50 bg-orange-500/10"
+                    : "border-white/10 bg-[#111118] hover:border-white/20"
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${client.color} flex items-center justify-center text-sm font-bold`}>
+                  {client.avatar}
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-medium">{client.name}</div>
+                  <div className="text-xs text-white/40">{folderCounts.all} clips</div>
+                </div>
+              </button>
+            ))}
+
+            {/* Google Drive Import Button */}
+            <button className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 bg-[#111118] hover:border-green-500/30 hover:bg-green-500/5 transition-all ml-auto">
+              <span className="text-xl">📁</span>
+              <div className="text-left">
+                <div className="text-sm font-medium">Import from Drive</div>
+                <div className="text-xs text-white/40">Google Drive sync</div>
+              </div>
+            </button>
+          </div>
+
+          {/* Folder Tabs + Search */}
+          <div className="flex items-center gap-4">
+            <div className="flex gap-1 bg-[#111118] border border-white/10 rounded-lg p-1">
+              {folders.map((folder) => (
+                <button
+                  key={folder}
+                  onClick={() => setSelectedFolder(folder)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all capitalize ${
+                    selectedFolder === folder
+                      ? "bg-orange-500 text-white"
+                      : "text-white/50 hover:text-white"
+                  }`}
+                >
+                  {folder} ({folderCounts[folder as keyof typeof folderCounts]})
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-sm">🔍</span>
+              <input
+                type="text"
+                placeholder="Search by name or tag (e.g. 'jump', 'outdoor', 'high-energy')"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[#111118] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Drop Zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); }}
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
+              dragOver
+                ? "border-orange-500 bg-orange-500/10"
+                : "border-white/10 hover:border-white/20"
+            }`}
+          >
+            <div className="text-3xl mb-2">🎬</div>
+            <p className="text-white/50 text-sm">Drag & drop video clips here</p>
+            <p className="text-white/30 text-xs mt-1">MP4, MOV, AVI supported · Auto-tagged with AI on upload</p>
+          </div>
+
+          {/* Clips Grid */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-medium text-white/60">{filteredClips.length} clips for <span className={`text-white`}>{currentClient.name}</span></h2>
+            </div>
+
+            {filteredClips.length === 0 ? (
+              <div className="text-center py-16 text-white/30">
+                <div className="text-4xl mb-3">🎬</div>
+                <p>No clips found</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-4">
+                {filteredClips.map((clip) => (
+                  <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden hover:border-orange-500/30 transition-all group">
+                    {/* Thumbnail */}
+                    <div className="aspect-video bg-white/5 flex items-center justify-center text-4xl relative">
+                      {clip.thumb}
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                        <button className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">▶</button>
+                      </div>
+                      <span className="absolute bottom-2 right-2 text-xs bg-black/60 px-1.5 py-0.5 rounded text-white/80">{clip.duration}</span>
+                      <span className={`absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded capitalize ${
+                        clip.folder === "approved" ? "bg-green-500/80" :
+                        clip.folder === "edited" ? "bg-blue-500/80" : "bg-white/20"
+                      }`}>{clip.folder}</span>
+                    </div>
+
+                    {/* Info */}
+                    <div className="p-3">
+                      <p className="text-xs font-medium truncate mb-2">{clip.name}</p>
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {clip.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full ${tagColors[tag] || "bg-white/10 text-white/50"}`}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-xs text-white/30">{clip.size}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

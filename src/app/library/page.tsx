@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { saveClip, getClipsByClient, Clip } from "@/lib/clips";
+import { saveClip, batchSaveClips, getClipsByClient, Clip } from "@/lib/clips";
 import { signIn, useSession } from "next-auth/react";
 
 const clients = [
@@ -93,6 +93,7 @@ export default function LibraryPage() {
 
     setSyncing(true);
     setShowDriveModal(false);
+    setUploadProgress("Scanning Google Drive folders...");
 
     try {
       const res = await fetch("/api/drive-sync", {
@@ -108,17 +109,20 @@ export default function LibraryPage() {
       const data = await res.json();
 
       if (data.success) {
-        for (const file of data.files) {
-          await saveClip(file);
-        }
+        setUploadProgress(`Saving ${data.count} clips to library...`);
+        await batchSaveClips(data.clips);
         await loadClips();
-        alert(`✅ Synced ${data.synced} videos from Google Drive!`);
+        setUploadProgress("");
+        alert(`✅ Synced ${data.count} videos from Google Drive!`);
+      } else {
+        alert("Sync failed: " + (data.error || "Unknown error"));
       }
     } catch (err) {
       console.error("Sync error:", err);
       alert("Sync failed. Please try again.");
     } finally {
       setSyncing(false);
+      setUploadProgress("");
     }
   }
 
@@ -279,19 +283,32 @@ export default function LibraryPage() {
                 {filteredClips.map((clip) => (
                   <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden hover:border-orange-500/30 transition-all group">
                     <div className="aspect-video bg-white/5 flex items-center justify-center relative overflow-hidden">
-                      {clip.thumbnailUrl ? (
-                        <img src={clip.thumbnailUrl} alt={clip.name} className="w-full h-full object-cover" />
+                      {(clip.thumbnailUrl || clip.driveThumbnailUrl) ? (
+                        <img
+                          src={clip.thumbnailUrl || clip.driveThumbnailUrl}
+                          alt={clip.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                        />
                       ) : (
                         <span className="text-4xl">🎬</span>
                       )}
                       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                        <a href={clip.bunnyUrl} target="_blank" rel="noopener noreferrer"
-                          className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">▶</a>
+                        {clip.bunnyUrl ? (
+                          <a href={clip.bunnyUrl} target="_blank" rel="noopener noreferrer"
+                            className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">▶</a>
+                        ) : clip.driveFileId ? (
+                          <a href={`https://drive.google.com/file/d/${clip.driveFileId}/view`} target="_blank" rel="noopener noreferrer"
+                            className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white text-xs">Drive</a>
+                        ) : null}
                       </div>
                       <span className={`absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded capitalize ${
                         clip.folder === "approved" ? "bg-green-500/80" :
                         clip.folder === "edited" ? "bg-blue-500/80" : "bg-white/20"
                       }`}>{clip.folder}</span>
+                      {clip.status === "drive-only" && (
+                        <span className="absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded bg-blue-600/80">📁 Drive</span>
+                      )}
                     </div>
 
                     <div className="p-3">

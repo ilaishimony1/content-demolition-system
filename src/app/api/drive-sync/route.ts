@@ -4,6 +4,36 @@ import { google } from "googleapis";
 const BUNNY_LIBRARY_ID = process.env.BUNNY_LIBRARY_ID;
 const BUNNY_API_KEY = process.env.BUNNY_API_KEY;
 
+// Recursively get all video files from a folder and its subfolders
+async function getAllVideoFiles(drive: ReturnType<typeof google.drive>, folderId: string): Promise<{id: string, name: string, size: string}[]> {
+  const allFiles: {id: string, name: string, size: string}[] = [];
+
+  // Get all items in this folder
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: "files(id, name, size, mimeType)",
+    pageSize: 1000,
+  });
+
+  const items = res.data.files || [];
+
+  for (const item of items) {
+    if (item.mimeType === "application/vnd.google-apps.folder") {
+      // Recurse into subfolder
+      const subFiles = await getAllVideoFiles(drive, item.id!);
+      allFiles.push(...subFiles);
+    } else if (item.mimeType?.includes("video/")) {
+      allFiles.push({
+        id: item.id!,
+        name: item.name!,
+        size: item.size ? `${(parseInt(item.size) / 1024 / 1024).toFixed(1)}MB` : "Unknown",
+      });
+    }
+  }
+
+  return allFiles;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { accessToken, folderId, clientId } = await req.json();
@@ -17,14 +47,8 @@ export async function POST(req: NextRequest) {
     auth.setCredentials({ access_token: accessToken });
     const drive = google.drive({ version: "v3", auth });
 
-    // List video files in the folder
-    const res = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'video/' and trashed = false`,
-      fields: "files(id, name, size, mimeType, modifiedTime)",
-      pageSize: 100,
-    });
-
-    const files = res.data.files || [];
+    // Get all video files recursively
+    const files = await getAllVideoFiles(drive, folderId);
 
     const results = [];
 
@@ -32,7 +56,7 @@ export async function POST(req: NextRequest) {
       try {
         // Download file from Google Drive
         const fileRes = await drive.files.get(
-          { fileId: file.id!, alt: "media" },
+          { fileId: file.id, alt: "media" },
           { responseType: "arraybuffer" }
         );
 
@@ -75,7 +99,7 @@ export async function POST(req: NextRequest) {
           bunnyUrl: `https://iframe.mediadelivery.net/embed/${BUNNY_LIBRARY_ID}/${videoId}`,
           thumbnailUrl: `https://vz-${BUNNY_LIBRARY_ID}.b-cdn.net/${videoId}/thumbnail.jpg`,
           driveFileId: file.id,
-          size: file.size ? `${(parseInt(file.size) / 1024 / 1024).toFixed(1)}MB` : "Unknown",
+          size: file.size,
           tags: [],
         });
       } catch (err) {

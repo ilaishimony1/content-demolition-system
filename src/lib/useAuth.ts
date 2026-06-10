@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 export interface UserProfile {
   uid: string;
@@ -19,6 +19,7 @@ export function useAuth() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -27,39 +28,44 @@ export function useAuth() {
 
         // Fetch role from Firestore
         const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+        let role: "operator" | "client" = "operator";
+        let clientId: string | undefined;
+        let name: string | undefined;
+
         if (userDoc.exists()) {
           const data = userDoc.data();
-          const userProfile: UserProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: data.role || "operator",
-            clientId: data.clientId,
-            name: data.name,
-          };
-          setProfile(userProfile);
+          role = data.role || "operator";
+          clientId = data.clientId;
+          name = data.name;
+        }
 
-          // Redirect based on role
-          if (data.role === "client") {
-            router.push("/portal");
-          }
-        } else {
-          // No Firestore doc = operator (you/Yuval)
-          setProfile({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: "operator",
-          });
+        const userProfile: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          role,
+          clientId,
+          name,
+        };
+        setProfile(userProfile);
+
+        // Role-based routing
+        if (role === "client" && pathname !== "/portal") {
+          router.push("/portal");
+        } else if (role === "operator" && pathname === "/portal") {
+          router.push("/");
         }
       } else {
         setUser(null);
         setProfile(null);
-        router.push("/login");
+        if (pathname !== "/login") {
+          router.push("/login");
+        }
       }
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, [router, pathname]);
 
   return { user, profile, loading };
 }

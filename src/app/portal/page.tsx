@@ -6,6 +6,7 @@ import { getClipsByClient, Clip } from "@/lib/clips";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+// portal page — clients only, operators redirected by useAuth
 
 export default function ClientPortalPage() {
   const { user, profile, loading } = useAuth();
@@ -14,13 +15,10 @@ export default function ClientPortalPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (profile?.role === "operator") {
-      router.push("/");
-    }
     if (profile?.clientId) {
       getClipsByClient(profile.clientId).then(setClips);
     }
-  }, [profile, router]);
+  }, [profile]);
 
   async function handleSignOut() {
     await signOut(auth);

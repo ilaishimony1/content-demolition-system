@@ -328,12 +328,6 @@ export default function ClientsPage() {
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
                 </div>
 
-                <div>
-                  <label className="text-xs text-white/40 mb-1 block">Profile Photo URL</label>
-                  <input type="text" placeholder="https://..." value={form.profilePhoto} onChange={e => setForm(f => ({ ...f, profilePhoto: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
-                  <p className="text-xs text-white/20 mt-1">Right-click their IG profile photo → Copy image address</p>
-                </div>
 
                 <div>
                   <label className="text-xs text-white/40 mb-1 block">Niche</label>

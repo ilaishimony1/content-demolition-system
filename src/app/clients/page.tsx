@@ -5,9 +5,11 @@ import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { useSearchParams } from "next/navigation";
 
 interface Client {
   id?: string;
+  clientId?: string;
   name: string;
   handle: string;
   email: string;
@@ -44,8 +46,10 @@ const emptyClient: Omit<Client, "id" | "createdAt"> = {
   notes: "",
 };
 
-export default function ClientsPage() {
+function ClientsPage() {
   const { user, loading } = useAuth();
+  const searchParams = useSearchParams();
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -56,6 +60,19 @@ export default function ClientsPage() {
   useEffect(() => {
     if (user) loadClients();
   }, [user]);
+
+  useEffect(() => {
+    const success = searchParams.get("success");
+    const error = searchParams.get("error");
+    if (success === "instagram_connected") {
+      setToast({ msg: "✅ Instagram connected successfully!", type: "success" });
+      loadClients();
+      setTimeout(() => setToast(null), 4000);
+    } else if (error) {
+      setToast({ msg: `❌ Connection failed: ${error}`, type: "error" });
+      setTimeout(() => setToast(null), 4000);
+    }
+  }, [searchParams]);
 
   async function loadClients() {
     const snap = await getDocs(query(collection(db, "users"), where("role", "==", "client")));
@@ -103,6 +120,13 @@ export default function ClientsPage() {
   return (
     <div className="flex h-screen bg-[#0a0a0f] text-white overflow-hidden">
       <Sidebar user={user} />
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-xl text-sm font-medium shadow-xl ${toast.type === "success" ? "bg-green-500/20 border border-green-500/30 text-green-400" : "bg-red-500/20 border border-red-500/30 text-red-400"}`}>
+          {toast.msg}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
@@ -248,15 +272,30 @@ export default function ClientsPage() {
                 )}
               </div>
 
-              {/* Connect Instagram button */}
-              {!selectedClient.instagramConnected && (
-                <div className="bg-pink-500/10 border border-pink-500/20 rounded-xl p-4 mb-4">
-                  <p className="text-sm text-pink-300 mb-2">📸 Connect Instagram to enable auto-posting and analytics</p>
-                  <button className="w-full bg-pink-500/20 hover:bg-pink-500/30 text-pink-400 border border-pink-500/30 py-2 rounded-lg text-sm font-medium transition-colors">
-                    Connect Instagram — Coming Soon
-                  </button>
-                </div>
-              )}
+              {/* Instagram connection */}
+              <div className={`rounded-xl p-4 mb-4 border ${selectedClient.instagramConnected ? "bg-green-500/10 border-green-500/20" : "bg-pink-500/10 border-pink-500/20"}`}>
+                {selectedClient.instagramConnected ? (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">✅</span>
+                    <div>
+                      <p className="text-sm font-medium text-green-400">Instagram Connected</p>
+                      {(selectedClient as Client & { instagramUsername?: string }).instagramUsername && (
+                        <p className="text-xs text-green-400/60">@{(selectedClient as Client & { instagramUsername?: string }).instagramUsername}</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-pink-300 mb-2">📸 Connect Instagram to enable auto-posting and analytics</p>
+                    <a
+                      href={`/api/auth/instagram?clientId=${selectedClient.clientId || selectedClient.id}`}
+                      className="block w-full text-center bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white border-0 py-2.5 rounded-lg text-sm font-semibold transition-all"
+                    >
+                      Connect Instagram →
+                    </a>
+                  </>
+                )}
+              </div>
 
               <button
                 onClick={() => openEditModal(selectedClient)}
@@ -382,4 +421,9 @@ export default function ClientsPage() {
       )}
     </div>
   );
+}
+
+import { Suspense } from "react";
+export default function ClientsPageWrapper() {
+  return <Suspense fallback={<div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>}><ClientsPage /></Suspense>;
 }

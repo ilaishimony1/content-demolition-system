@@ -2,23 +2,78 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/useAuth";
-import { getClipsByClient, Clip } from "@/lib/clips";
 import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
-// portal page — clients only, operators redirected by useAuth
+import { collection, query, where, getDocs, updateDoc, doc, orderBy } from "firebase/firestore";
+
+interface Reel {
+  id: string;
+  title: string;
+  clientId: string;
+  status: "pending" | "approved" | "rejected" | "posted";
+  thumbnailUrl?: string;
+  bunnyUrl?: string;
+  caption?: string;
+  platform?: string[];
+  scheduledFor?: string;
+  feedback?: string;
+  createdAt?: { seconds: number };
+}
+
+interface Clip {
+  id: string;
+  name: string;
+  driveThumbnailUrl?: string;
+  folder: string;
+  status?: string;
+}
 
 export default function ClientPortalPage() {
   const { user, profile, loading } = useAuth();
+  const [reels, setReels] = useState<Reel[]>([]);
   const [clips, setClips] = useState<Clip[]>([]);
-  const [activeTab, setActiveTab] = useState<"library" | "approved" | "analytics">("approved");
+  const [activeTab, setActiveTab] = useState<"reels" | "library" | "analytics">("reels");
+  const [feedbackModal, setFeedbackModal] = useState<Reel | null>(null);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     if (profile?.clientId) {
-      getClipsByClient(profile.clientId).then(setClips);
+      loadReels(profile.clientId);
+      loadClips(profile.clientId);
     }
   }, [profile]);
+
+  async function loadReels(clientId: string) {
+    const snap = await getDocs(
+      query(collection(db, "reels"), where("clientId", "==", clientId), orderBy("createdAt", "desc"))
+    );
+    setReels(snap.docs.map(d => ({ id: d.id, ...d.data() } as Reel)));
+  }
+
+  async function loadClips(clientId: string) {
+    const snap = await getDocs(
+      query(collection(db, "clips"), where("clientId", "==", clientId))
+    );
+    setClips(snap.docs.map(d => ({ id: d.id, ...d.data() } as Clip)));
+  }
+
+  async function handleApprove(reel: Reel) {
+    await updateDoc(doc(db, "reels", reel.id), { status: "approved", feedback: "" });
+    setReels(r => r.map(x => x.id === reel.id ? { ...x, status: "approved" } : x));
+  }
+
+  async function handleRequestChanges() {
+    if (!feedbackModal || !feedbackText.trim()) return;
+    setSubmitting(true);
+    await updateDoc(doc(db, "reels", feedbackModal.id), { status: "rejected", feedback: feedbackText });
+    setReels(r => r.map(x => x.id === feedbackModal.id ? { ...x, status: "rejected", feedback: feedbackText } : x));
+    setFeedbackModal(null);
+    setFeedbackText("");
+    setSubmitting(false);
+  }
 
   async function handleSignOut() {
     await signOut(auth);
@@ -33,71 +88,94 @@ export default function ClientPortalPage() {
 
   if (!user || !profile) return null;
 
-  const approvedClips = clips.filter(c => c.folder === "approved");
-  const totalClips = clips.length;
+  const firstName = profile.name?.split(" ")[0] || "there";
+  const pendingReels = reels.filter(r => r.status === "pending");
+  const approvedReels = reels.filter(r => r.status === "approved");
+  const postedReels = reels.filter(r => r.status === "posted");
+
+  const statusBadge = (status: Reel["status"]) => {
+    const map = {
+      pending: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+      approved: "bg-green-500/20 text-green-400 border-green-500/30",
+      rejected: "bg-red-500/20 text-red-400 border-red-500/30",
+      posted: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    };
+    const labels = { pending: "Awaiting Review", approved: "Approved ✓", rejected: "Changes Requested", posted: "Posted ✓" };
+    return <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${map[status]}`}>{labels[status]}</span>;
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
       {/* Header */}
-      <div className="border-b border-white/10 px-8 py-4 flex items-center justify-between">
+      <div className="border-b border-white/10 px-4 md:px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-sm font-bold">
-            {profile.name?.[0] || "C"}
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-sm font-bold">
+            {profile.name?.[0] ?? "C"}
           </div>
           <div>
-            <p className="text-sm font-semibold">{profile.name}</p>
+            <p className="text-sm font-semibold">{profile.name || "Client"}</p>
             <p className="text-xs text-white/40">Client Portal</p>
           </div>
         </div>
-
-        <div className="flex items-center gap-4">
-          <div className="text-xs text-white/40">Powered by <span className="text-orange-400">Content Demolition</span></div>
-          <button
-            onClick={handleSignOut}
-            className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 border border-white/10 rounded-lg"
-          >
+        <div className="flex items-center gap-3 md:gap-4">
+          <div className="hidden md:block text-xs text-white/30">Powered by <span className="text-orange-400 font-medium">Content Demolition</span></div>
+          <button onClick={handleSignOut} className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 border border-white/10 rounded-lg">
             Sign out
           </button>
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 md:px-8 py-6 md:py-10">
+      <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 md:py-12">
+
         {/* Welcome */}
-        <div className="mb-10">
-          <h1 className="text-3xl font-bold mb-1">Hey {profile.name?.split(" ")[0]} 👋</h1>
-          <p className="text-white/40">Here&apos;s your content overview</p>
+        <div className="mb-8">
+          <h1 className="text-2xl md:text-3xl font-bold mb-1">Hey {firstName} 👋</h1>
+          <p className="text-white/40 text-sm">Here&apos;s your content overview</p>
         </div>
 
+        {/* Action needed banner */}
+        {pendingReels.length > 0 && (
+          <div className="bg-orange-500/10 border border-orange-500/30 rounded-2xl p-4 mb-8 flex items-center gap-4">
+            <div className="text-2xl">🎬</div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-orange-300">
+                {pendingReels.length} reel{pendingReels.length > 1 ? "s" : ""} waiting for your review
+              </p>
+              <p className="text-xs text-orange-400/60 mt-0.5">Review and approve before we schedule them</p>
+            </div>
+            <button onClick={() => setActiveTab("reels")} className="text-xs bg-orange-500 hover:bg-orange-400 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+              Review now
+            </button>
+          </div>
+        )}
+
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 md:gap-4 mb-8 md:mb-10">
-          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6">
-            <p className="text-white/40 text-xs mb-2">Total Footage</p>
-            <p className="text-3xl font-bold">{totalClips}</p>
-            <p className="text-white/30 text-xs mt-1">clips in library</p>
-          </div>
-          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6">
-            <p className="text-white/40 text-xs mb-2">Approved Content</p>
-            <p className="text-3xl font-bold text-green-400">{approvedClips.length}</p>
-            <p className="text-white/30 text-xs mt-1">ready to post</p>
-          </div>
-          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6">
-            <p className="text-white/40 text-xs mb-2">This Month</p>
-            <p className="text-3xl font-bold text-orange-400">0</p>
-            <p className="text-white/30 text-xs mt-1">reels posted</p>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+          {[
+            { label: "Total Footage", value: clips.length, sub: "clips in library", color: "text-white" },
+            { label: "Awaiting Review", value: pendingReels.length, sub: "need your approval", color: "text-yellow-400" },
+            { label: "Approved", value: approvedReels.length, sub: "ready to schedule", color: "text-green-400" },
+            { label: "Posted", value: postedReels.length, sub: "reels live", color: "text-blue-400" },
+          ].map(s => (
+            <div key={s.label} className="bg-[#111118] border border-white/10 rounded-2xl p-4 md:p-5">
+              <p className="text-white/40 text-xs mb-2">{s.label}</p>
+              <p className={`text-2xl md:text-3xl font-bold ${s.color}`}>{s.value}</p>
+              <p className="text-white/30 text-xs mt-1">{s.sub}</p>
+            </div>
+          ))}
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-[#111118] border border-white/10 rounded-lg p-1 w-full md:w-fit mb-6 md:mb-8 overflow-x-auto">
+        <div className="flex gap-1 bg-[#111118] border border-white/10 rounded-xl p-1 w-full md:w-fit mb-6">
           {[
-            { id: "approved", label: "✅ Approved Content" },
-            { id: "library", label: "🎬 My Library" },
+            { id: "reels", label: "🎬 Reels" },
+            { id: "library", label: "📁 My Library" },
             { id: "analytics", label: "📊 Analytics" },
-          ].map((tab) => (
+          ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`px-4 py-2 rounded-md text-xs font-medium transition-all ${
+              className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-xs font-medium transition-all ${
                 activeTab === tab.id ? "bg-orange-500 text-white" : "text-white/50 hover:text-white"
               }`}
             >
@@ -106,68 +184,155 @@ export default function ClientPortalPage() {
           ))}
         </div>
 
-        {/* Content */}
-        {activeTab === "approved" && (
-          <div>
-            {approvedClips.length === 0 ? (
-              <div className="text-center py-20 text-white/30">
+        {/* Reels Tab */}
+        {activeTab === "reels" && (
+          <div className="space-y-4">
+            {reels.length === 0 ? (
+              <div className="text-center py-20 text-white/30 bg-[#111118] border border-white/10 rounded-2xl">
                 <div className="text-5xl mb-4">🎬</div>
-                <p className="text-lg">No approved content yet</p>
-                <p className="text-sm mt-2">Your team is working on it!</p>
+                <p className="text-lg">No reels yet</p>
+                <p className="text-sm mt-2">Your team is working on your content!</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {approvedClips.map((clip) => (
-                  <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden">
-                    <div className="aspect-video bg-white/5 flex items-center justify-center">
-                      {clip.thumbnailUrl || clip.driveThumbnailUrl ? (
-                        <img src={clip.thumbnailUrl || clip.driveThumbnailUrl} alt={clip.name} className="w-full h-full object-cover" />
+              reels.map(reel => (
+                <div key={reel.id} className="bg-[#111118] border border-white/10 rounded-2xl p-4 md:p-6 hover:border-white/20 transition-all">
+                  <div className="flex gap-4 md:gap-6">
+                    {/* Thumbnail */}
+                    <div className="w-20 md:w-28 aspect-[9/16] rounded-xl bg-white/5 flex-shrink-0 overflow-hidden">
+                      {reel.thumbnailUrl ? (
+                        <img src={reel.thumbnailUrl} alt={reel.title} className="w-full h-full object-cover" />
                       ) : (
-                        <span className="text-4xl">🎬</span>
+                        <div className="w-full h-full flex items-center justify-center text-2xl">🎬</div>
                       )}
                     </div>
-                    <div className="p-3">
-                      <p className="text-xs font-medium truncate">{clip.name}</p>
-                      <p className="text-xs text-green-400 mt-1">✅ Approved</p>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h3 className="font-semibold text-sm md:text-base truncate">{reel.title}</h3>
+                        {statusBadge(reel.status)}
+                      </div>
+
+                      {reel.caption && (
+                        <p className="text-xs text-white/50 mb-3 line-clamp-2">{reel.caption}</p>
+                      )}
+
+                      {reel.platform && reel.platform.length > 0 && (
+                        <div className="flex gap-1.5 mb-3">
+                          {reel.platform.map(p => (
+                            <span key={p} className="text-xs bg-white/5 text-white/40 px-2 py-0.5 rounded-full">{p}</span>
+                          ))}
+                        </div>
+                      )}
+
+                      {reel.feedback && reel.status === "rejected" && (
+                        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 mb-3">
+                          <p className="text-xs text-red-400">💬 Your feedback: &quot;{reel.feedback}&quot;</p>
+                        </div>
+                      )}
+
+                      {reel.scheduledFor && reel.status === "approved" && (
+                        <p className="text-xs text-blue-400 mb-3">🗓 Scheduled for {reel.scheduledFor}</p>
+                      )}
+
+                      {/* Actions — only for pending */}
+                      {reel.status === "pending" && (
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            onClick={() => handleApprove(reel)}
+                            className="flex-1 md:flex-none bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 px-4 py-2 rounded-lg text-xs font-semibold transition-colors"
+                          >
+                            ✓ Approve
+                          </button>
+                          <button
+                            onClick={() => { setFeedbackModal(reel); setFeedbackText(""); }}
+                            className="flex-1 md:flex-none bg-white/5 hover:bg-white/10 text-white/60 border border-white/10 px-4 py-2 rounded-lg text-xs font-semibold transition-colors"
+                          >
+                            ✎ Request Changes
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))
             )}
           </div>
         )}
 
+        {/* Library Tab */}
         {activeTab === "library" && (
           <div>
-            <p className="text-white/40 text-sm mb-6">{totalClips} clips in your library</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-              {clips.slice(0, 20).map((clip) => (
-                <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden">
-                  <div className="aspect-video bg-white/5 flex items-center justify-center">
-                    {clip.driveThumbnailUrl ? (
-                      <img src={clip.driveThumbnailUrl} alt={clip.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    ) : (
-                      <span className="text-2xl">🎬</span>
-                    )}
-                  </div>
-                  <div className="p-2">
-                    <p className="text-xs truncate text-white/60">{clip.name}</p>
-                  </div>
+            <p className="text-white/40 text-sm mb-4">{clips.length} clips in your library</p>
+            {clips.length === 0 ? (
+              <div className="text-center py-20 text-white/30 bg-[#111118] border border-white/10 rounded-2xl">
+                <div className="text-5xl mb-4">📁</div>
+                <p>No footage synced yet</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {clips.slice(0, 24).map(clip => (
+                    <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden group">
+                      <div className="aspect-video bg-white/5 flex items-center justify-center overflow-hidden">
+                        {clip.driveThumbnailUrl ? (
+                          <img src={clip.driveThumbnailUrl} alt={clip.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        ) : (
+                          <span className="text-2xl">🎬</span>
+                        )}
+                      </div>
+                      <div className="p-2">
+                        <p className="text-xs truncate text-white/50">{clip.name}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            {totalClips > 20 && <p className="text-white/30 text-xs mt-4 text-center">Showing 20 of {totalClips} clips</p>}
+                {clips.length > 24 && (
+                  <p className="text-white/30 text-xs mt-4 text-center">Showing 24 of {clips.length} clips</p>
+                )}
+              </>
+            )}
           </div>
         )}
 
+        {/* Analytics Tab */}
         {activeTab === "analytics" && (
-          <div className="text-center py-20 text-white/30">
+          <div className="text-center py-20 text-white/30 bg-[#111118] border border-white/10 rounded-2xl">
             <div className="text-5xl mb-4">📊</div>
-            <p className="text-lg">Analytics coming soon</p>
+            <p className="text-lg font-medium text-white/50">Analytics coming soon</p>
             <p className="text-sm mt-2">We&apos;re connecting your Instagram & TikTok data</p>
           </div>
         )}
       </div>
+
+      {/* Feedback Modal */}
+      {feedbackModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-end md:items-center justify-center z-50 px-4 pb-4 md:pb-0">
+          <div className="bg-[#111118] border border-white/10 rounded-2xl w-full max-w-md p-6">
+            <h3 className="font-semibold mb-1">Request Changes</h3>
+            <p className="text-xs text-white/40 mb-4">Tell the team what to fix for &quot;{feedbackModal.title}&quot;</p>
+            <textarea
+              value={feedbackText}
+              onChange={e => setFeedbackText(e.target.value)}
+              placeholder="e.g. Make the hook shorter, change the music, add subtitles..."
+              rows={4}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 resize-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setFeedbackModal(null)} className="flex-1 border border-white/10 text-white/60 py-2.5 rounded-xl text-sm">
+                Cancel
+              </button>
+              <button
+                onClick={handleRequestChanges}
+                disabled={!feedbackText.trim() || submitting}
+                className="flex-1 bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm"
+              >
+                {submitting ? "Sending..." : "Send Feedback"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

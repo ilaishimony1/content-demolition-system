@@ -324,12 +324,29 @@ function ClientsPage() {
                 )}
               </div>
 
-              <button
-                onClick={() => openEditModal(selectedClient)}
-                className="w-full bg-orange-500 hover:bg-orange-400 text-white font-semibold py-3 rounded-xl text-sm"
-              >
-                Edit Client
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => openEditModal(selectedClient)}
+                  className="flex-1 bg-orange-500 hover:bg-orange-400 text-white font-semibold py-3 rounded-xl text-sm"
+                >
+                  Edit Client
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Delete ${selectedClient.name}? This cannot be undone.`)) return;
+                    await import("firebase/firestore").then(({ deleteDoc, doc: firestoreDoc }) =>
+                      deleteDoc(firestoreDoc(db, "users", selectedClient.id!))
+                    );
+                    setSelectedClient(null);
+                    loadClients();
+                    setToast({ msg: "✅ Client deleted", type: "success" });
+                    setTimeout(() => setToast(null), 3000);
+                  }}
+                  className="px-4 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30 font-semibold py-3 rounded-xl text-sm"
+                >
+                  🗑
+                </button>
+              </div>
             </div>
           </div>
         </div>

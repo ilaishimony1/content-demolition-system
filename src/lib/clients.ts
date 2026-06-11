@@ -1,4 +1,4 @@
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export interface ClientData {
@@ -19,7 +19,8 @@ export interface ClientData {
 }
 
 export async function getClients(): Promise<ClientData[]> {
-  const snap = await getDocs(collection(db, "clients"));
+  // Clients are stored in the `users` collection with role === "client"
+  const snap = await getDocs(query(collection(db, "users"), where("role", "==", "client")));
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as ClientData));
 }
 

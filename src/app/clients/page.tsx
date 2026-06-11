@@ -58,7 +58,8 @@ export default function ClientsPage() {
   }, [user]);
 
   async function loadClients() {
-    const snap = await getDocs(collection(db, "clients"));
+    const { query, where } = await import("firebase/firestore");
+    const snap = await getDocs(query(collection(db, "users"), where("role", "==", "client")));
     setClients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
   }
 
@@ -79,9 +80,16 @@ export default function ClientsPage() {
     if (!form.name) return;
     setSaving(true);
     if (editingClient?.id) {
-      await updateDoc(doc(db, "clients", editingClient.id), { ...form });
+      await updateDoc(doc(db, "users", editingClient.id), { ...form });
     } else {
-      await addDoc(collection(db, "clients"), { ...form, createdAt: serverTimestamp() });
+      // Auto-derive clientId from first name (lowercase, no spaces)
+      const clientId = form.name.trim().split(" ")[0].toLowerCase();
+      await addDoc(collection(db, "users"), {
+        ...form,
+        role: "client",
+        clientId,
+        createdAt: serverTimestamp(),
+      });
     }
     setSaving(false);
     setShowModal(false);

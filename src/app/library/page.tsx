@@ -4,12 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { saveClip, batchSaveClips, getClipsByClient, Clip } from "@/lib/clips";
+import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
-
-const clients = [
-  { id: "tom", name: "Tom Dahan", handle: "@tom.dahan", color: "from-orange-500 to-red-600", avatar: "T" },
-  { id: "aviv", name: "Aviv Bushari", handle: "@aviv.bushari", color: "from-blue-500 to-purple-600", avatar: "A" },
-];
 
 const folders = ["all", "raw", "edited", "approved"];
 
@@ -23,7 +19,8 @@ const tagColors: Record<string, string> = {
 
 export default function LibraryPage() {
   const { user, loading } = useAuth();
-  const [selectedClient, setSelectedClient] = useState("tom");
+  const [clients, setClients] = useState<ClientData[]>([]);
+  const [selectedClient, setSelectedClient] = useState("");
   const [selectedFolder, setSelectedFolder] = useState("all");
   const [selectedDriveFolder, setSelectedDriveFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -40,6 +37,15 @@ export default function LibraryPage() {
 
   useEffect(() => {
     if (user) {
+      getClients().then(data => {
+        setClients(data);
+        if (data.length > 0 && !selectedClient) setSelectedClient(data[0].id);
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user && selectedClient) {
       setSelectedDriveFolder(null);
       loadClips();
       loadAllCounts();
@@ -159,7 +165,7 @@ export default function LibraryPage() {
     return matchesWorkflow && matchesDriveFolder && matchesSearch;
   });
 
-  const currentClient = clients.find(c => c.id === selectedClient)!;
+  const currentClient = clients.find(c => c.id === selectedClient);
 
   const folderCounts = {
     all: clips.length,
@@ -197,8 +203,8 @@ export default function LibraryPage() {
 
         <div className="p-4 md:p-8 space-y-4 md:space-y-6">
           {/* Client Selector */}
-          <div className="flex gap-3">
-            {clients.map((client) => (
+          <div className="flex gap-3 flex-wrap">
+            {clients.map((client, index) => (
               <button
                 key={client.id}
                 onClick={() => setSelectedClient(client.id)}
@@ -208,9 +214,13 @@ export default function LibraryPage() {
                     : "border-white/10 bg-[#111118] hover:border-white/20"
                 }`}
               >
-                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${client.color} flex items-center justify-center text-sm font-bold`}>
-                  {client.avatar}
-                </div>
+                {client.profilePhoto ? (
+                  <img src={client.profilePhoto} alt={client.name} className="w-8 h-8 rounded-lg object-cover" />
+                ) : (
+                  <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${getClientColor(index)} flex items-center justify-center text-sm font-bold`}>
+                    {client.name[0]}
+                  </div>
+                )}
                 <div className="text-left">
                   <div className="text-sm font-medium">{client.name}</div>
                   <div className="text-xs text-white/40">{clientCounts[client.id] ?? "..."} clips</div>
@@ -332,7 +342,7 @@ export default function LibraryPage() {
           <div className="flex-1">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-medium text-white/60">
-                {filteredClips.length} clips for <span className="text-white">{currentClient.name}</span>
+                {filteredClips.length} clips for <span className="text-white">{currentClient?.name}</span>
                 {selectedDriveFolder && <span className="text-orange-400"> / {selectedDriveFolder.split("/").pop()}</span>}
               </h2>
             </div>

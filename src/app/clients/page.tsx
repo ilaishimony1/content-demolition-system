@@ -171,7 +171,7 @@ export default function ClientsPage() {
                       <p className="text-xs text-white/40">Monthly</p>
                     </div>
                     <div className="bg-white/5 rounded-xl p-3 text-center">
-                      <p className="text-sm font-bold text-blue-400">{client.platforms.join(", ")}</p>
+                      <p className="text-sm font-bold text-blue-400">{(client.platforms || []).join(", ")}</p>
                       <p className="text-xs text-white/40">Platforms</p>
                     </div>
                   </div>

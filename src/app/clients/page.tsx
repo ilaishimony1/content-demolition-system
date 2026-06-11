@@ -311,17 +311,6 @@ export default function ClientsPage() {
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
                 </div>
 
-                <div>
-                  <label className="text-xs text-white/40 mb-1 block">Followers</label>
-                  <input type="text" placeholder="48.2K" value={form.followers} onChange={e => setForm(f => ({ ...f, followers: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
-                </div>
-
-                <div>
-                  <label className="text-xs text-white/40 mb-1 block">Monthly Rate (₪)</label>
-                  <input type="number" placeholder="6000" value={form.monthlyRate} onChange={e => setForm(f => ({ ...f, monthlyRate: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
-                </div>
 
                 <div>
                   <label className="text-xs text-white/40 mb-1 block">Google Drive Folder ID</label>

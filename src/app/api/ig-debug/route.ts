@@ -1,0 +1,55 @@
+import { NextRequest, NextResponse } from "next/server";
+
+// Temporary debug endpoint — shows what Meta returns for a stored token
+export async function GET(req: NextRequest) {
+  const clientId = req.nextUrl.searchParams.get("clientId") || "ilai";
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!;
+
+  // Fetch token from Firestore REST API
+  const queryRes = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "users" }],
+          where: { fieldFilter: { field: { fieldPath: "clientId" }, op: "EQUAL", value: { stringValue: clientId } } },
+          limit: 1,
+        },
+      }),
+    }
+  );
+  const queryData = await queryRes.json();
+  const doc = queryData[0]?.document;
+  if (!doc) return NextResponse.json({ error: "No user doc found", clientId });
+
+  const fields = doc.fields;
+  const token = fields?.instagramAccessToken?.stringValue;
+  if (!token) return NextResponse.json({ error: "No token saved", fields });
+
+  // Now test the token
+  const pagesRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${token}`);
+  const pagesData = await pagesRes.json();
+
+  const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${token}`);
+  const meData = await meRes.json();
+
+  const results: Record<string, unknown> = {
+    saved_fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, (v as Record<string, unknown>).stringValue || (v as Record<string, unknown>).booleanValue])),
+    me: meData,
+    pages: pagesData,
+  };
+
+  if (pagesData.data) {
+    for (const page of pagesData.data) {
+      const igRes = await fetch(
+        `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token}`
+      );
+      const igData = await igRes.json();
+      results[`ig_on_page_${page.name}`] = igData;
+    }
+  }
+
+  return NextResponse.json(results);
+}

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 interface Client {
@@ -58,7 +58,6 @@ export default function ClientsPage() {
   }, [user]);
 
   async function loadClients() {
-    const { query, where } = await import("firebase/firestore");
     const snap = await getDocs(query(collection(db, "users"), where("role", "==", "client")));
     setClients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
   }

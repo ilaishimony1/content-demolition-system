@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Step 1: Redirect user to Instagram OAuth
+// Step 1: Redirect user to Instagram OAuth (Business API - Instagram Login)
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
@@ -9,17 +9,16 @@ export async function GET(req: NextRequest) {
   const redirectUri = `${process.env.NEXTAUTH_URL}/api/auth/instagram/callback`;
 
   const scopes = [
-    "instagram_basic",
-    "instagram_content_publish",
-    "instagram_manage_insights",
-    "pages_show_list",
-    "pages_read_engagement",
+    "instagram_business_basic",
+    "instagram_business_manage_messages",
+    "instagram_business_manage_comments",
+    "instagram_business_content_publish",
   ].join(",");
 
-  // Store clientId in state so we know which client to update on callback
   const state = Buffer.from(JSON.stringify({ clientId })).toString("base64");
 
-  const url = new URL("https://www.facebook.com/v19.0/dialog/oauth");
+  // Instagram Business API uses instagram.com OAuth directly
+  const url = new URL("https://api.instagram.com/oauth/authorize");
   url.searchParams.set("client_id", appId);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("scope", scopes);

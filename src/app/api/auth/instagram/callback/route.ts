@@ -27,7 +27,6 @@ async function firestoreQuery(collection: string, field: string, value: string) 
 }
 
 async function firestoreUpdate(docPath: string, fields: Record<string, unknown>) {
-  // Build Firestore field mask and value format
   const firestoreFields: Record<string, unknown> = {};
   const updateMask: string[] = [];
 
@@ -76,72 +75,54 @@ export async function GET(req: NextRequest) {
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
 
   try {
-    // 1. Exchange code for short-lived token
-    const tokenRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`
-    );
+    // 1. Exchange code for short-lived token (Instagram Business API)
+    const formData = new URLSearchParams();
+    formData.append("client_id", appId);
+    formData.append("client_secret", appSecret);
+    formData.append("grant_type", "authorization_code");
+    formData.append("redirect_uri", redirectUri);
+    formData.append("code", code);
+
+    const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      body: formData,
+    });
     const tokenData = await tokenRes.json();
+
     if (!tokenData.access_token) {
       console.error("Token exchange failed:", tokenData);
-      return NextResponse.redirect(`${baseUrl}/clients?error=token_exchange_failed`);
+      return NextResponse.redirect(`${baseUrl}/clients?error=token_failed`);
     }
+
+    const shortToken = tokenData.access_token;
+    const igUserId = tokenData.user_id;
 
     // 2. Exchange for long-lived token (60 days)
     const longRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`
+      `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
     );
     const longData = await longRes.json();
-    const accessToken = longData.access_token || tokenData.access_token;
+    const accessToken = longData.access_token || shortToken;
 
-    // 3. Get Facebook pages
-    const pagesRes = await fetch(`https://graph.facebook.com/v19.0/me/accounts?access_token=${accessToken}`);
-    const pagesData = await pagesRes.json();
-    const page = pagesData.data?.[0];
+    // 3. Get Instagram profile
+    const profileRes = await fetch(
+      `https://graph.instagram.com/v19.0/me?fields=username,followers_count,profile_picture_url,account_type&access_token=${accessToken}`
+    );
+    const profile = await profileRes.json();
 
-    let igAccountId = null;
-    let igUsername = null;
-    let igFollowers = null;
-    let igProfilePic = null;
-    let finalToken = accessToken;
-
-    if (page) {
-      finalToken = page.access_token || accessToken;
-
-      // 4. Get IG Business Account from page
-      const igPageRes = await fetch(
-        `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${finalToken}`
-      );
-      const igPageData = await igPageRes.json();
-      igAccountId = igPageData.instagram_business_account?.id;
-
-      if (igAccountId) {
-        // 5. Get IG profile
-        const profileRes = await fetch(
-          `https://graph.facebook.com/v19.0/${igAccountId}?fields=username,followers_count,profile_picture_url&access_token=${finalToken}`
-        );
-        const profileData = await profileRes.json();
-        igUsername = profileData.username || null;
-        igFollowers = profileData.followers_count || null;
-        igProfilePic = profileData.profile_picture_url || null;
-      }
-    }
-
-    // 6. Find user doc by clientId via Firestore REST API
+    // 4. Save to Firestore
     const queryResult = await firestoreQuery("users", "clientId", clientId);
     const docResult = Array.isArray(queryResult) ? queryResult.find((r: { document?: unknown }) => r.document) : null;
 
     if (docResult?.document) {
-      // Extract doc ID from name path
-      const docName = (docResult.document as { name: string }).name;
-      const docId = docName.split("/").pop()!;
-
+      const docId = (docResult.document as { name: string }).name.split("/").pop()!;
       await firestoreUpdate(`users/${docId}`, {
         instagramConnected: true,
-        instagramAccessToken: finalToken,
-        instagramAccountId: igAccountId,
-        instagramUsername: igUsername,
-        followers: igFollowers ? `${(igFollowers / 1000).toFixed(1)}K` : null,
-        profilePhoto: igProfilePic,
+        instagramAccessToken: accessToken,
+        instagramAccountId: String(igUserId),
+        instagramUsername: profile.username || null,
+        followers: profile.followers_count ? `${(profile.followers_count / 1000).toFixed(1)}K` : null,
+        profilePhoto: profile.profile_picture_url || null,
         instagramConnectedAt: new Date().toISOString(),
       });
     }

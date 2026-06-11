@@ -2,7 +2,8 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 export interface ClientData {
-  id: string;
+  id: string;        // Firestore document ID (auto-generated)
+  clientId?: string; // The slug used for clips ("tom", "aviv") — matches clips collection
   name: string;
   handle?: string;
   email?: string;

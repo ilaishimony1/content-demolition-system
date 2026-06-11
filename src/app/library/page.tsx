@@ -39,7 +39,7 @@ export default function LibraryPage() {
     if (user) {
       getClients().then(data => {
         setClients(data);
-        if (data.length > 0 && !selectedClient) setSelectedClient(data[0].id);
+        if (data.length > 0 && !selectedClient) setSelectedClient(data[0].clientId || data[0].id);
       });
     }
   }, [user]);
@@ -60,7 +60,7 @@ export default function LibraryPage() {
   async function loadAllCounts() {
     const counts: Record<string, number> = {};
     for (const client of clients) {
-      const data = await getClipsByClient(client.id);
+      const data = await getClipsByClient(client.clientId || client.id);
       counts[client.id] = data.length;
     }
     setClientCounts(counts);
@@ -165,7 +165,7 @@ export default function LibraryPage() {
     return matchesWorkflow && matchesDriveFolder && matchesSearch;
   });
 
-  const currentClient = clients.find(c => c.id === selectedClient);
+  const currentClient = clients.find(c => (c.clientId || c.id) === selectedClient);
 
   const folderCounts = {
     all: clips.length,
@@ -207,9 +207,9 @@ export default function LibraryPage() {
             {clients.map((client, index) => (
               <button
                 key={client.id}
-                onClick={() => setSelectedClient(client.id)}
+                onClick={() => setSelectedClient(client.clientId || client.id)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ${
-                  selectedClient === client.id
+                  selectedClient === (client.clientId || client.id)
                     ? "border-orange-500/50 bg-orange-500/10"
                     : "border-white/10 bg-[#111118] hover:border-white/20"
                 }`}

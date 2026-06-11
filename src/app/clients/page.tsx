@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { collection, addDoc, getDocs, updateDoc, doc, serverTimestamp, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 
 interface Client {
   id?: string;
@@ -51,6 +51,7 @@ const emptyPassword = "";
 function ClientsPage() {
   const { user, loading } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -185,7 +186,7 @@ function ClientsPage() {
               {clients.map((client) => (
                 <div
                   key={client.id}
-                  onClick={() => setSelectedClient(client)}
+                  onClick={() => router.push(`/clients/${client.id}`)}
                   className="bg-[#111118] border border-white/10 rounded-2xl p-6 hover:border-orange-500/30 transition-all cursor-pointer"
                 >
                   <div className="flex items-start justify-between mb-4">

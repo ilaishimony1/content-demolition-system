@@ -74,7 +74,7 @@ export default function Home() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {clients.map((client, index) => (
-                  <div key={client.id} className="bg-[#111118] border border-white/10 rounded-xl p-6 hover:border-orange-500/30 transition-all">
+                  <a href={`/clients/${client.id}`} key={client.id} className="bg-[#111118] border border-white/10 rounded-xl p-6 hover:border-orange-500/30 transition-all block">
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center gap-3">
                         {client.profilePhoto ? (
@@ -117,7 +117,7 @@ export default function Home() {
                         <div className="text-xs text-white/40">Drive</div>
                       </div>
                     </div>
-                  </div>
+                  </a>
                 ))}
               </div>
             )}

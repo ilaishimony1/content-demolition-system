@@ -35,10 +35,20 @@ export async function GET(req: NextRequest) {
   const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id,name&access_token=${token}`);
   const meData = await meRes.json();
 
+  // Check permissions
+  const permRes = await fetch(`https://graph.facebook.com/v19.0/me/permissions?access_token=${token}`);
+  const permData = await permRes.json();
+
+  // Try getting IG directly from user
+  const igDirectRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=instagram_business_account&access_token=${token}`);
+  const igDirectData = await igDirectRes.json();
+
   const results: Record<string, unknown> = {
     saved_fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, (v as Record<string, unknown>).stringValue || (v as Record<string, unknown>).booleanValue])),
     me: meData,
     pages: pagesData,
+    permissions: permData,
+    ig_direct: igDirectData,
   };
 
   if (pagesData.data) {

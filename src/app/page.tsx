@@ -77,7 +77,7 @@ export default function Home() {
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-[#0a0a0f]/80 backdrop-blur border-b border-white/10 px-8 py-4 flex items-center justify-between">
+        <div className="sticky top-0 z-10 bg-[#0a0a0f]/80 backdrop-blur border-b border-white/10 px-4 md:px-8 py-4 flex items-center justify-between mt-12 md:mt-0">
           <div>
             <h1 className="text-xl font-bold">Operator Dashboard</h1>
             <p className="text-xs text-white/40">Tuesday, June 10 · All systems running</p>
@@ -88,9 +88,9 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="p-8 space-y-8">
+        <div className="p-4 md:p-8 space-y-6 md:space-y-8">
           {/* Stats Row */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             {stats.map((stat) => (
               <div key={stat.label} className="bg-[#111118] border border-white/10 rounded-xl p-5">
                 <div className="text-2xl mb-2">{stat.icon}</div>
@@ -107,7 +107,7 @@ export default function Home() {
               <h2 className="text-lg font-semibold">Clients</h2>
               <button className="text-xs text-orange-400 hover:text-orange-300">+ Add Client</button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {clients.map((client) => (
                 <div
                   key={client.id}
@@ -164,7 +164,7 @@ export default function Home() {
           </div>
 
           {/* Bottom Row */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Recent Activity */}
             <div className="bg-[#111118] border border-white/10 rounded-xl p-6">
               <h3 className="font-semibold mb-4">Recent Activity</h3>

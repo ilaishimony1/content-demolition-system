@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { User } from "firebase/auth";
+import { useState } from "react";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: "⚡", href: "/" },
@@ -18,12 +19,13 @@ const navItems = [
 
 export default function Sidebar({ user }: { user: User }) {
   const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  return (
-    <div className="w-64 bg-[#111118] border-r border-white/10 flex flex-col shrink-0">
+  const NavContent = () => (
+    <>
       {/* Logo */}
       <div className="p-6 border-b border-white/10">
-        <Link href="/" className="flex items-center gap-3">
+        <Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-sm">
             💥
           </div>
@@ -42,6 +44,7 @@ export default function Sidebar({ user }: { user: User }) {
             <Link
               key={item.id}
               href={item.href}
+              onClick={() => setMobileOpen(false)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
                 isActive
                   ? "bg-orange-500/20 text-orange-400 font-medium"
@@ -74,6 +77,41 @@ export default function Sidebar({ user }: { user: User }) {
           </button>
         </div>
       </div>
-    </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <div className="hidden md:flex w-64 bg-[#111118] border-r border-white/10 flex-col shrink-0">
+        <NavContent />
+      </div>
+
+      {/* Mobile Top Bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-[#111118] border-b border-white/10 px-4 py-3 flex items-center justify-between">
+        <Link href="/" className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-xs">
+            💥
+          </div>
+          <div className="font-bold text-sm text-white">Content <span className="text-orange-400">Demolition</span></div>
+        </Link>
+        <button
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className="text-white/60 hover:text-white p-1"
+        >
+          {mobileOpen ? "✕" : "☰"}
+        </button>
+      </div>
+
+      {/* Mobile Drawer */}
+      {mobileOpen && (
+        <div className="md:hidden fixed inset-0 z-40 flex">
+          <div className="w-72 bg-[#111118] border-r border-white/10 flex flex-col pt-14">
+            <NavContent />
+          </div>
+          <div className="flex-1 bg-black/60" onClick={() => setMobileOpen(false)} />
+        </div>
+      )}
+    </>
   );
 }

@@ -174,7 +174,7 @@ export default function LibraryPage() {
 
       <div className="flex-1 overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-[#0a0a0f]/80 backdrop-blur border-b border-white/10 px-8 py-4 flex items-center justify-between">
+        <div className="sticky top-0 z-10 bg-[#0a0a0f]/80 backdrop-blur border-b border-white/10 px-4 md:px-8 py-4 flex items-center justify-between mt-12 md:mt-0">
           <div>
             <h1 className="text-xl font-bold">B-Roll Library</h1>
             <p className="text-xs text-white/40">Manage and search footage per client</p>
@@ -195,7 +195,7 @@ export default function LibraryPage() {
           />
         </div>
 
-        <div className="p-8 space-y-6">
+        <div className="p-4 md:p-8 space-y-4 md:space-y-6">
           {/* Client Selector */}
           <div className="flex gap-3">
             {clients.map((client) => (
@@ -343,7 +343,7 @@ export default function LibraryPage() {
                 <p>No clips yet — upload your first B-roll above</p>
               </div>
             ) : (
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                 {filteredClips.map((clip) => (
                   <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden hover:border-orange-500/30 transition-all group">
                     <div className="aspect-video bg-white/5 flex items-center justify-center relative overflow-hidden">

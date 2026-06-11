@@ -287,9 +287,39 @@ export default function ClientsPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-white/40 mb-1 block">Instagram Handle</label>
-                  <input type="text" placeholder="@tom.dahan" value={form.handle} onChange={e => setForm(f => ({ ...f, handle: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
+                  <label className="text-xs text-white/40 mb-2 block">Social Accounts</label>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span>📸</span>
+                        <div>
+                          <p className="text-sm font-medium">Instagram</p>
+                          <p className="text-xs text-white/30">Profile, followers, publishing</p>
+                        </div>
+                      </div>
+                      <span className="text-xs bg-white/10 text-white/40 px-3 py-1 rounded-full">Coming soon</span>
+                    </div>
+                    <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span>🎵</span>
+                        <div>
+                          <p className="text-sm font-medium">TikTok</p>
+                          <p className="text-xs text-white/30">Publishing & analytics</p>
+                        </div>
+                      </div>
+                      <span className="text-xs bg-white/10 text-white/40 px-3 py-1 rounded-full">Coming soon</span>
+                    </div>
+                    <div className="flex items-center justify-between bg-white/5 border border-white/10 rounded-lg px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <span>▶️</span>
+                        <div>
+                          <p className="text-sm font-medium">YouTube Shorts</p>
+                          <p className="text-xs text-white/30">Publishing & analytics</p>
+                        </div>
+                      </div>
+                      <span className="text-xs bg-white/10 text-white/40 px-3 py-1 rounded-full">Coming soon</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -318,20 +348,6 @@ export default function ClientsPage() {
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
                 </div>
 
-                <div>
-                  <label className="text-xs text-white/40 mb-1 block">Platforms</label>
-                  <div className="flex gap-2">
-                    {platformOptions.map(p => (
-                      <button key={p} onClick={() => setForm(f => ({
-                        ...f,
-                        platforms: f.platforms.includes(p) ? f.platforms.filter(x => x !== p) : [...f.platforms, p]
-                      }))}
-                        className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-all ${form.platforms.includes(p) ? "border-orange-500 bg-orange-500/20 text-orange-400" : "border-white/10 text-white/50 hover:text-white"}`}>
-                        {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
 
                 <div>
                   <label className="text-xs text-white/40 mb-1 block">Notes</label>

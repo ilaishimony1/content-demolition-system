@@ -218,7 +218,7 @@ export default function LibraryPage() {
                   <img src={client.profilePhoto} alt={client.name} className="w-8 h-8 rounded-lg object-cover" />
                 ) : (
                   <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${getClientColor(index)} flex items-center justify-center text-sm font-bold`}>
-                    {client.name[0]}
+                    {client.name?.[0] ?? "?"}
                   </div>
                 )}
                 <div className="text-left">

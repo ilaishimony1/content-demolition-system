@@ -143,7 +143,7 @@ export default function ClientsPage() {
                         <img src={client.profilePhoto} alt={client.name} className="w-14 h-14 rounded-full object-cover border-2 border-white/10" />
                       ) : (
                         <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-xl font-bold">
-                          {client.name[0]}
+                          {client.name?.[0] ?? "?"}
                         </div>
                       )}
                       <div>
@@ -207,7 +207,7 @@ export default function ClientsPage() {
                   <img src={selectedClient.profilePhoto} alt={selectedClient.name} className="w-20 h-20 rounded-full object-cover" />
                 ) : (
                   <div className="w-20 h-20 rounded-full bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-2xl font-bold">
-                    {selectedClient.name[0]}
+                    {selectedClient.name?.[0] ?? "?"}
                   </div>
                 )}
                 <div>

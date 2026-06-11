@@ -81,7 +81,7 @@ export default function Home() {
                           <img src={client.profilePhoto} alt={client.name} className="w-12 h-12 rounded-xl object-cover" />
                         ) : (
                           <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${getClientColor(index)} flex items-center justify-center text-lg font-bold`}>
-                            {client.name[0]}
+                            {client.name?.[0] ?? "?"}
                           </div>
                         )}
                         <div>

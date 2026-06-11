@@ -46,6 +46,8 @@ const emptyClient: Omit<Client, "id" | "createdAt"> = {
   notes: "",
 };
 
+const emptyPassword = "";
+
 function ClientsPage() {
   const { user, loading } = useAuth();
   const searchParams = useSearchParams();
@@ -54,6 +56,7 @@ function ClientsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [form, setForm] = useState(emptyClient);
+  const [password, setPassword] = useState(emptyPassword);
   const [saving, setSaving] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
 
@@ -82,6 +85,7 @@ function ClientsPage() {
   function openAddModal() {
     setEditingClient(null);
     setForm(emptyClient);
+    setPassword("");
     setShowModal(true);
   }
 
@@ -95,17 +99,40 @@ function ClientsPage() {
   async function handleSave() {
     if (!form.name) return;
     setSaving(true);
-    if (editingClient?.id) {
-      await updateDoc(doc(db, "users", editingClient.id), { ...form });
-    } else {
-      // Auto-derive clientId from first name (lowercase, no spaces)
-      const clientId = form.name.trim().split(" ")[0].toLowerCase();
-      await addDoc(collection(db, "users"), {
-        ...form,
-        role: "client",
-        clientId,
-        createdAt: serverTimestamp(),
-      });
+    try {
+      if (editingClient?.id) {
+        // Edit existing client — just update Firestore
+        await updateDoc(doc(db, "users", editingClient.id), { ...form });
+      } else {
+        // New client — create Firebase Auth account + Firestore doc via API
+        if (!form.email || !password) {
+          setToast({ msg: "❌ Email and password are required for new clients", type: "error" });
+          setSaving(false);
+          return;
+        }
+        const res = await fetch("/api/clients/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: form.name,
+            email: form.email,
+            password,
+            niche: form.niche,
+            driveFolderId: form.driveFolderId,
+            notes: form.notes,
+          }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          setToast({ msg: `❌ ${data.error}`, type: "error" });
+          setSaving(false);
+          return;
+        }
+        setToast({ msg: `✅ Client created! They can log in with ${form.email}`, type: "success" });
+        setTimeout(() => setToast(null), 5000);
+      }
+    } catch {
+      setToast({ msg: "❌ Something went wrong", type: "error" });
     }
     setSaving(false);
     setShowModal(false);
@@ -373,6 +400,14 @@ function ClientsPage() {
                   <input type="email" placeholder="tom@email.com" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
                 </div>
+
+                {!editingClient && (
+                  <div>
+                    <label className="text-xs text-white/40 mb-1 block">Password <span className="text-orange-400">(you set this for them)</span></label>
+                    <input type="password" placeholder="Min 6 characters" value={password} onChange={e => setPassword(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50" />
+                  </div>
+                )}
 
 
                 <div>

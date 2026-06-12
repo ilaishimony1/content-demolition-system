@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 // Temporary debug endpoint — shows what Meta returns for a stored token
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId") || "ilai";
+  const reset = req.nextUrl.searchParams.get("reset") === "true";
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!;
+  const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
 
   // Fetch token from Firestore REST API
   const queryRes = await fetch(
@@ -24,7 +26,30 @@ export async function GET(req: NextRequest) {
   const doc = queryData[0]?.document;
   if (!doc) return NextResponse.json({ error: "No user doc found", clientId });
 
+  const docId = doc.name.split("/").pop();
   const fields = doc.fields;
+
+  // Reset mode — clear Instagram data so client can reconnect
+  if (reset) {
+    const resetFields = {
+      instagramConnected: { booleanValue: false },
+      instagramAccessToken: { nullValue: null },
+      instagramAccountId: { nullValue: null },
+      instagramUsername: { nullValue: null },
+      followers: { nullValue: null },
+      profilePhoto: { nullValue: null },
+    };
+    await fetch(
+      `${FIRESTORE_URL}/users/${docId}?updateMask.fieldPaths=instagramConnected&updateMask.fieldPaths=instagramAccessToken&updateMask.fieldPaths=instagramAccountId&updateMask.fieldPaths=instagramUsername&updateMask.fieldPaths=followers&updateMask.fieldPaths=profilePhoto`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: resetFields }),
+      }
+    );
+    return NextResponse.json({ success: true, message: `Instagram reset for ${clientId}. They can now reconnect.` });
+  }
+
   const token = fields?.instagramAccessToken?.stringValue;
   if (!token) return NextResponse.json({ error: "No token saved", fields });
 

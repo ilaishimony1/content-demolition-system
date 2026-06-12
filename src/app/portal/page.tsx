@@ -37,12 +37,20 @@ interface AnalyticsPost {
   timestamp: string;
 }
 
+interface AIInsights {
+  topPatterns: string[];
+  bestHooks: { hook: string; why: string; engagementRate: string }[];
+  worstHooks: { hook: string; why: string }[];
+  contentInsights: string;
+  topRecommendations: string[];
+  avoidList: string[];
+  hookFormula: string;
+}
+
 interface Analytics {
-  topByEngagement: AnalyticsPost[];
-  topByEngagementRate: AnalyticsPost[];
-  bestHours: { hour: number; avgEngagement: number }[];
-  typeStats: Record<string, { count: number; totalEngagement: number }>;
-  totalPosts: number;
+  posts: AnalyticsPost[];
+  aiInsights: AIInsights | null;
+  totalAnalysed: number;
   avgEngagementRate: string;
 }
 
@@ -84,7 +92,7 @@ function ClientPortalPageInner() {
 
   async function loadAnalytics(clientId: string) {
     setAnalyticsLoading(true);
-    const res = await fetch(`/api/instagram/analytics?clientId=${clientId}`);
+    const res = await fetch(`/api/instagram/ai-analysis?clientId=${clientId}`);
     const data = await res.json();
     if (!data.error) setAnalytics(data);
     setAnalyticsLoading(false);
@@ -387,29 +395,30 @@ function ClientPortalPageInner() {
               </div>
             ) : !analytics && !analyticsLoading ? (
               <div className="text-center py-16 bg-[#111118] border border-white/10 rounded-2xl">
-                <div className="text-5xl mb-4">📊</div>
-                <p className="text-white/60 mb-4">Analyse your last 20 posts</p>
+                <div className="text-5xl mb-4">🤖</div>
+                <p className="text-white/80 font-semibold mb-2">AI-Powered Instagram Analysis</p>
+                <p className="text-white/40 text-sm mb-6">Claude analyses your last 25 posts — engagement patterns, best hooks, what to do more of</p>
                 <button
                   onClick={() => profile.clientId && loadAnalytics(profile.clientId)}
-                  className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all"
+                  className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all"
                 >
-                  Load My Analytics →
+                  🔍 Analyse My Content →
                 </button>
               </div>
             ) : analyticsLoading ? (
-              <div className="text-center py-20 text-white/30 bg-[#111118] border border-white/10 rounded-2xl">
-                <div className="text-3xl mb-3 animate-pulse">📊</div>
-                <p>Fetching your Instagram data...</p>
+              <div className="text-center py-20 bg-[#111118] border border-white/10 rounded-2xl">
+                <div className="text-4xl mb-4 animate-pulse">🤖</div>
+                <p className="text-white/60 font-medium">Claude is analysing your content...</p>
+                <p className="text-white/30 text-sm mt-2">Reading your last 25 posts + engagement data</p>
               </div>
             ) : analytics ? (
               <>
-                {/* Summary Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Summary */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {[
-                    { label: "Posts Analysed", value: analytics.totalPosts, icon: "📸" },
+                    { label: "Posts Analysed", value: analytics.totalAnalysed, icon: "📸" },
                     { label: "Avg Engagement Rate", value: `${analytics.avgEngagementRate}%`, icon: "🔥" },
-                    { label: "Top Post Engagement", value: analytics.topByEngagement[0]?.engagement || 0, icon: "⚡" },
-                    { label: "Best Hour", value: analytics.bestHours[0] ? `${analytics.bestHours[0].hour}:00` : "—", icon: "🕐" },
+                    { label: "Top Post Rate", value: `${analytics.posts[0]?.engagementRate || 0}%`, icon: "⚡" },
                   ].map(s => (
                     <div key={s.label} className="bg-[#111118] border border-white/10 rounded-2xl p-4">
                       <div className="text-2xl mb-2">{s.icon}</div>
@@ -419,62 +428,108 @@ function ClientPortalPageInner() {
                   ))}
                 </div>
 
-                {/* Best Hours */}
-                {analytics.bestHours.length > 0 && (
-                  <div className="bg-[#111118] border border-white/10 rounded-2xl p-5">
-                    <h3 className="font-semibold mb-4">🕐 Best Times to Post</h3>
-                    <div className="flex gap-3">
-                      {analytics.bestHours.map((h, i) => (
-                        <div key={h.hour} className={`flex-1 rounded-xl p-3 text-center ${i === 0 ? "bg-orange-500/20 border border-orange-500/30" : "bg-white/5"}`}>
-                          <div className={`text-lg font-bold ${i === 0 ? "text-orange-400" : ""}`}>
-                            {h.hour}:00
-                          </div>
-                          <div className="text-xs text-white/40 mt-1">avg {Math.round(h.avgEngagement)} eng</div>
-                          {i === 0 && <div className="text-xs text-orange-400 mt-1">🏆 Best</div>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* AI Insights */}
+                {analytics.aiInsights && (
+                  <>
+                    {/* Hook Formula */}
+                    {analytics.aiInsights.hookFormula && (
+                      <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/30 rounded-2xl p-5">
+                        <h3 className="font-semibold mb-2 text-orange-400">🎣 Your Hook Formula</h3>
+                        <p className="text-sm text-white/80">{analytics.aiInsights.hookFormula}</p>
+                      </div>
+                    )}
 
-                {/* Top Posts by Engagement */}
-                <div>
-                  <h3 className="font-semibold mb-4">🔥 Top Posts by Engagement</h3>
-                  <div className="space-y-3">
-                    {analytics.topByEngagement.map((post, i) => (
-                      <div key={post.id} className="bg-[#111118] border border-white/10 rounded-2xl p-4 flex gap-4">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-sm font-bold">
-                          {i + 1}
-                        </div>
-                        {post.thumbnailUrl && (
-                          <img src={post.thumbnailUrl} alt="" className="w-16 h-16 rounded-xl object-cover flex-shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate mb-1">{post.hook}</p>
-                          <div className="flex flex-wrap gap-3 text-xs text-white/50">
-                            <span>❤️ {post.likes}</span>
-                            <span>💬 {post.comments}</span>
-                            <span>🔖 {post.saves}</span>
-                            <span>↗️ {post.shares}</span>
-                            <span className="text-orange-400 font-medium">📈 {post.engagementRate}% rate</span>
-                          </div>
-                          <div className="text-xs text-white/30 mt-1">Reach: {post.reach.toLocaleString()}</div>
+                    {/* Content Insights */}
+                    {analytics.aiInsights.contentInsights && (
+                      <div className="bg-[#111118] border border-white/10 rounded-2xl p-5">
+                        <h3 className="font-semibold mb-3">🧠 What Your Audience Responds To</h3>
+                        <p className="text-sm text-white/70 leading-relaxed">{analytics.aiInsights.contentInsights}</p>
+                      </div>
+                    )}
+
+                    {/* Top Patterns */}
+                    {analytics.aiInsights.topPatterns?.length > 0 && (
+                      <div className="bg-[#111118] border border-white/10 rounded-2xl p-5">
+                        <h3 className="font-semibold mb-4">✅ What&apos;s Working</h3>
+                        <div className="space-y-2">
+                          {analytics.aiInsights.topPatterns.map((p, i) => (
+                            <div key={i} className="flex gap-3 items-start">
+                              <span className="text-green-400 mt-0.5">✓</span>
+                              <p className="text-sm text-white/70">{p}</p>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    )}
 
-                {/* Best Hooks */}
-                <div className="bg-[#111118] border border-white/10 rounded-2xl p-5">
-                  <h3 className="font-semibold mb-4">🎣 Best Hooks (from top posts)</h3>
-                  <div className="space-y-3">
-                    {analytics.topByEngagementRate.slice(0, 5).map((post, i) => (
-                      <div key={post.id} className="flex gap-3 items-start">
-                        <span className="text-xs text-white/30 w-4 mt-0.5">{i + 1}.</span>
-                        <div className="flex-1">
-                          <p className="text-sm text-white/80">&ldquo;{post.hook}&rdquo;</p>
-                          <p className="text-xs text-orange-400 mt-0.5">{post.engagementRate}% engagement rate · {post.engagement} total</p>
+                    {/* Best Hooks */}
+                    {analytics.aiInsights.bestHooks?.length > 0 && (
+                      <div className="bg-[#111118] border border-white/10 rounded-2xl p-5">
+                        <h3 className="font-semibold mb-4">🔥 Best Hooks</h3>
+                        <div className="space-y-4">
+                          {analytics.aiInsights.bestHooks.map((h, i) => (
+                            <div key={i} className="border-l-2 border-orange-500/50 pl-4">
+                              <p className="text-sm font-medium text-white/90">&ldquo;{h.hook}&rdquo;</p>
+                              <p className="text-xs text-orange-400 mt-1">{h.engagementRate} · {h.why}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recommendations + Avoid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {analytics.aiInsights.topRecommendations?.length > 0 && (
+                        <div className="bg-[#111118] border border-green-500/20 rounded-2xl p-5">
+                          <h3 className="font-semibold mb-4 text-green-400">🚀 Do More Of</h3>
+                          <div className="space-y-2">
+                            {analytics.aiInsights.topRecommendations.map((r, i) => (
+                              <div key={i} className="flex gap-2 items-start">
+                                <span className="text-green-400 text-xs mt-0.5">→</span>
+                                <p className="text-sm text-white/70">{r}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {analytics.aiInsights.avoidList?.length > 0 && (
+                        <div className="bg-[#111118] border border-red-500/20 rounded-2xl p-5">
+                          <h3 className="font-semibold mb-4 text-red-400">🛑 Stop Doing</h3>
+                          <div className="space-y-2">
+                            {analytics.aiInsights.avoidList.map((r, i) => (
+                              <div key={i} className="flex gap-2 items-start">
+                                <span className="text-red-400 text-xs mt-0.5">✕</span>
+                                <p className="text-sm text-white/70">{r}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* All Posts Grid */}
+                <div>
+                  <h3 className="font-semibold mb-4">📊 All Posts — Ranked by Engagement Rate</h3>
+                  <div className="space-y-2">
+                    {analytics.posts.map((post, i) => (
+                      <div key={post.id} className={`bg-[#111118] border rounded-xl p-3 flex gap-3 items-center ${i === 0 ? "border-orange-500/40" : "border-white/10"}`}>
+                        <span className={`text-xs font-bold w-6 text-center ${i === 0 ? "text-orange-400" : "text-white/30"}`}>#{i + 1}</span>
+                        {post.thumbnailUrl && (
+                          <img src={post.thumbnailUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-white/70 truncate">{post.hook || "No caption"}</p>
+                          <div className="flex gap-2 text-xs text-white/30 mt-0.5">
+                            <span>❤️{post.likes}</span>
+                            <span>💬{post.comments}</span>
+                            <span>🔖{post.saves}</span>
+                            <span>↗️{post.shares}</span>
+                          </div>
+                        </div>
+                        <div className={`text-sm font-bold flex-shrink-0 ${post.engagementRate > parseFloat(analytics.avgEngagementRate) ? "text-green-400" : "text-white/40"}`}>
+                          {post.engagementRate}%
                         </div>
                       </div>
                     ))}
@@ -482,10 +537,10 @@ function ClientPortalPageInner() {
                 </div>
 
                 <button
-                  onClick={() => profile.clientId && loadAnalytics(profile.clientId)}
-                  className="w-full bg-white/5 hover:bg-white/10 text-white/50 py-3 rounded-xl text-sm transition-all"
+                  onClick={() => { setAnalytics(null); }}
+                  className="w-full bg-white/5 hover:bg-white/10 text-white/40 py-3 rounded-xl text-sm transition-all"
                 >
-                  Refresh Data
+                  Run New Analysis
                 </button>
               </>
             ) : null}

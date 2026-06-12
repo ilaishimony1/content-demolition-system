@@ -1,0 +1,158 @@
+import { NextRequest, NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
+
+const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!;
+
+async function getClientToken(clientId: string) {
+  const res = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "users" }],
+          where: { fieldFilter: { field: { fieldPath: "clientId" }, op: "EQUAL", value: { stringValue: clientId } } },
+          limit: 1,
+        },
+      }),
+    }
+  );
+  const data = await res.json();
+  const doc = data[0]?.document;
+  if (!doc) return null;
+  return {
+    token: doc.fields?.instagramAccessToken?.stringValue,
+    igUserId: doc.fields?.instagramAccountId?.stringValue,
+    name: doc.fields?.name?.stringValue,
+    niche: doc.fields?.niche?.stringValue,
+  };
+}
+
+export async function GET(req: NextRequest) {
+  const clientId = req.nextUrl.searchParams.get("clientId");
+  if (!clientId) return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
+
+  const creds = await getClientToken(clientId);
+  if (!creds?.token) return NextResponse.json({ error: "No Instagram token found" }, { status: 404 });
+
+  const { token, igUserId, name, niche } = creds;
+
+  try {
+    // 1. Fetch recent media
+    const mediaRes = await fetch(
+      `https://graph.instagram.com/v19.0/${igUserId}/media?fields=id,caption,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=30&access_token=${token}`
+    );
+    const mediaData = await mediaRes.json();
+    if (mediaData.error) return NextResponse.json({ error: mediaData.error.message }, { status: 400 });
+
+    const posts = mediaData.data || [];
+
+    // 2. Fetch insights for each post
+    const postsWithInsights = await Promise.all(
+      posts.slice(0, 25).map(async (post: Record<string, unknown>) => {
+        try {
+          const insightRes = await fetch(
+            `https://graph.instagram.com/v19.0/${post.id}/insights?metric=impressions,reach,saved,shares&access_token=${token}`
+          );
+          const insightData = await insightRes.json();
+          const metrics: Record<string, number> = {};
+          if (insightData.data) {
+            for (const m of insightData.data) {
+              metrics[m.name] = m.values?.[0]?.value ?? m.value ?? 0;
+            }
+          }
+          const likes = (post.like_count as number) || 0;
+          const comments = (post.comments_count as number) || 0;
+          const saves = metrics.saved || 0;
+          const shares = metrics.shares || 0;
+          const reach = metrics.reach || 1;
+          const engagement = likes + comments + saves + shares;
+          const engagementRate = ((engagement / reach) * 100).toFixed(2);
+          const caption = (post.caption as string) || "";
+          const hook = caption.split("\n")[0].slice(0, 150);
+
+          return {
+            id: post.id,
+            mediaType: post.media_type,
+            timestamp: post.timestamp,
+            thumbnailUrl: post.thumbnail_url || post.media_url,
+            caption: caption.slice(0, 500),
+            hook,
+            likes,
+            comments,
+            saves,
+            shares,
+            reach: metrics.reach || 0,
+            impressions: metrics.impressions || 0,
+            engagement,
+            engagementRate: parseFloat(engagementRate),
+          };
+        } catch { return null; }
+      })
+    );
+
+    const validPosts = postsWithInsights.filter(Boolean);
+    const sorted = [...validPosts].sort((a, b) => b!.engagementRate - a!.engagementRate);
+
+    // 3. Send to Claude for deep analysis
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+    const postsSummary = sorted.slice(0, 20).map((p, i) =>
+      `Post ${i + 1} [${p!.mediaType}] (${new Date(p!.timestamp).toLocaleDateString()}):
+Hook: "${p!.hook}"
+Engagement Rate: ${p!.engagementRate}% | Likes: ${p!.likes} | Comments: ${p!.comments} | Saves: ${p!.saves} | Shares: ${p!.shares} | Reach: ${p!.reach}
+Caption excerpt: "${p!.caption.slice(0, 200)}"`
+    ).join("\n\n");
+
+    const message = await anthropic.messages.create({
+      model: "claude-opus-4-5",
+      max_tokens: 1500,
+      messages: [{
+        role: "user",
+        content: `You are a top Instagram growth strategist analysing the account of ${name || clientId}, a content creator in the ${niche || "general"} niche.
+
+Here are their last ${sorted.length} posts sorted by engagement rate:
+
+${postsSummary}
+
+Provide a sharp, actionable analysis in JSON format with these exact keys:
+{
+  "topPatterns": ["3-4 bullet points about what their best content has in common"],
+  "bestHooks": [{"hook": "...", "why": "why this hook worked", "engagementRate": "X%"}] (top 5 hooks from talking/face posts),
+  "worstHooks": [{"hook": "...", "why": "why this underperformed"}] (2-3 weak hooks),
+  "contentInsights": "2-3 sentences about their content style and what their audience responds to",
+  "topRecommendations": ["4-5 specific actionable things to do more of"],
+  "avoidList": ["2-3 specific things to stop doing"],
+  "hookFormula": "A 1-2 sentence formula for their best performing hook style"
+}
+
+Be specific to their actual content, not generic advice. Use the real data.`
+      }],
+    });
+
+    const rawText = message.content[0].type === "text" ? message.content[0].text : "";
+
+    // Parse JSON from Claude's response
+    let aiInsights;
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      aiInsights = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch {
+      aiInsights = { contentInsights: rawText };
+    }
+
+    return NextResponse.json({
+      posts: sorted,
+      aiInsights,
+      totalAnalysed: validPosts.length,
+      avgEngagementRate: validPosts.length > 0
+        ? (validPosts.reduce((s, p) => s + p!.engagementRate, 0) / validPosts.length).toFixed(1)
+        : "0",
+    });
+
+  } catch (err) {
+    console.error("AI analysis error:", err);
+    return NextResponse.json({ error: "Analysis failed" }, { status: 500 });
+  }
+}

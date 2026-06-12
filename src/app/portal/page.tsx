@@ -21,6 +21,31 @@ interface Reel {
   createdAt?: { seconds: number };
 }
 
+interface AnalyticsPost {
+  id: string;
+  hook: string;
+  caption: string;
+  thumbnailUrl?: string;
+  mediaType: string;
+  likes: number;
+  comments: number;
+  saves: number;
+  shares: number;
+  reach: number;
+  engagement: number;
+  engagementRate: number;
+  timestamp: string;
+}
+
+interface Analytics {
+  topByEngagement: AnalyticsPost[];
+  topByEngagementRate: AnalyticsPost[];
+  bestHours: { hour: number; avgEngagement: number }[];
+  typeStats: Record<string, { count: number; totalEngagement: number }>;
+  totalPosts: number;
+  avgEngagementRate: string;
+}
+
 interface Clip {
   id: string;
   name: string;
@@ -34,6 +59,8 @@ function ClientPortalPageInner() {
   const [reels, setReels] = useState<Reel[]>([]);
   const [clips, setClips] = useState<Clip[]>([]);
   const [activeTab, setActiveTab] = useState<"reels" | "library" | "analytics">("reels");
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [feedbackModal, setFeedbackModal] = useState<Reel | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -53,6 +80,14 @@ function ClientPortalPageInner() {
       query(collection(db, "clips"), where("clientId", "==", clientId))
     );
     setClips(snap.docs.map(d => ({ id: d.id, ...d.data() } as Clip)));
+  }
+
+  async function loadAnalytics(clientId: string) {
+    setAnalyticsLoading(true);
+    const res = await fetch(`/api/instagram/analytics?clientId=${clientId}`);
+    const data = await res.json();
+    if (!data.error) setAnalytics(data);
+    setAnalyticsLoading(false);
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
@@ -344,10 +379,116 @@ function ClientPortalPageInner() {
 
         {/* Analytics Tab */}
         {activeTab === "analytics" && (
-          <div className="text-center py-20 text-white/30 bg-[#111118] border border-white/10 rounded-2xl">
-            <div className="text-5xl mb-4">📊</div>
-            <p className="text-lg font-medium text-white/50">Analytics coming soon</p>
-            <p className="text-sm mt-2">We&apos;re connecting your Instagram & TikTok data</p>
+          <div className="space-y-6">
+            {!profile.instagramConnected ? (
+              <div className="text-center py-20 text-white/30 bg-[#111118] border border-white/10 rounded-2xl">
+                <div className="text-5xl mb-4">📸</div>
+                <p className="text-lg font-medium text-white/50">Connect Instagram to see analytics</p>
+              </div>
+            ) : !analytics && !analyticsLoading ? (
+              <div className="text-center py-16 bg-[#111118] border border-white/10 rounded-2xl">
+                <div className="text-5xl mb-4">📊</div>
+                <p className="text-white/60 mb-4">Analyse your last 20 posts</p>
+                <button
+                  onClick={() => profile.clientId && loadAnalytics(profile.clientId)}
+                  className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all"
+                >
+                  Load My Analytics →
+                </button>
+              </div>
+            ) : analyticsLoading ? (
+              <div className="text-center py-20 text-white/30 bg-[#111118] border border-white/10 rounded-2xl">
+                <div className="text-3xl mb-3 animate-pulse">📊</div>
+                <p>Fetching your Instagram data...</p>
+              </div>
+            ) : analytics ? (
+              <>
+                {/* Summary Stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: "Posts Analysed", value: analytics.totalPosts, icon: "📸" },
+                    { label: "Avg Engagement Rate", value: `${analytics.avgEngagementRate}%`, icon: "🔥" },
+                    { label: "Top Post Engagement", value: analytics.topByEngagement[0]?.engagement || 0, icon: "⚡" },
+                    { label: "Best Hour", value: analytics.bestHours[0] ? `${analytics.bestHours[0].hour}:00` : "—", icon: "🕐" },
+                  ].map(s => (
+                    <div key={s.label} className="bg-[#111118] border border-white/10 rounded-2xl p-4">
+                      <div className="text-2xl mb-2">{s.icon}</div>
+                      <div className="text-2xl font-bold">{s.value}</div>
+                      <div className="text-xs text-white/40 mt-1">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Best Hours */}
+                {analytics.bestHours.length > 0 && (
+                  <div className="bg-[#111118] border border-white/10 rounded-2xl p-5">
+                    <h3 className="font-semibold mb-4">🕐 Best Times to Post</h3>
+                    <div className="flex gap-3">
+                      {analytics.bestHours.map((h, i) => (
+                        <div key={h.hour} className={`flex-1 rounded-xl p-3 text-center ${i === 0 ? "bg-orange-500/20 border border-orange-500/30" : "bg-white/5"}`}>
+                          <div className={`text-lg font-bold ${i === 0 ? "text-orange-400" : ""}`}>
+                            {h.hour}:00
+                          </div>
+                          <div className="text-xs text-white/40 mt-1">avg {Math.round(h.avgEngagement)} eng</div>
+                          {i === 0 && <div className="text-xs text-orange-400 mt-1">🏆 Best</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Top Posts by Engagement */}
+                <div>
+                  <h3 className="font-semibold mb-4">🔥 Top Posts by Engagement</h3>
+                  <div className="space-y-3">
+                    {analytics.topByEngagement.map((post, i) => (
+                      <div key={post.id} className="bg-[#111118] border border-white/10 rounded-2xl p-4 flex gap-4">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center text-sm font-bold">
+                          {i + 1}
+                        </div>
+                        {post.thumbnailUrl && (
+                          <img src={post.thumbnailUrl} alt="" className="w-16 h-16 rounded-xl object-cover flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate mb-1">{post.hook}</p>
+                          <div className="flex flex-wrap gap-3 text-xs text-white/50">
+                            <span>❤️ {post.likes}</span>
+                            <span>💬 {post.comments}</span>
+                            <span>🔖 {post.saves}</span>
+                            <span>↗️ {post.shares}</span>
+                            <span className="text-orange-400 font-medium">📈 {post.engagementRate}% rate</span>
+                          </div>
+                          <div className="text-xs text-white/30 mt-1">Reach: {post.reach.toLocaleString()}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Best Hooks */}
+                <div className="bg-[#111118] border border-white/10 rounded-2xl p-5">
+                  <h3 className="font-semibold mb-4">🎣 Best Hooks (from top posts)</h3>
+                  <div className="space-y-3">
+                    {analytics.topByEngagementRate.slice(0, 5).map((post, i) => (
+                      <div key={post.id} className="flex gap-3 items-start">
+                        <span className="text-xs text-white/30 w-4 mt-0.5">{i + 1}.</span>
+                        <div className="flex-1">
+                          <p className="text-sm text-white/80">&ldquo;{post.hook}&rdquo;</p>
+                          <p className="text-xs text-orange-400 mt-0.5">{post.engagementRate}% engagement rate · {post.engagement} total</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => profile.clientId && loadAnalytics(profile.clientId)}
+                  className="w-full bg-white/5 hover:bg-white/10 text-white/50 py-3 rounded-xl text-sm transition-all"
+                >
+                  Refresh Data
+                </button>
+              </>
+            ) : null}
           </div>
         )}
       </div>

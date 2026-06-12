@@ -30,7 +30,7 @@ interface Clip {
 }
 
 function ClientPortalPageInner() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, refreshProfile } = useAuth();
   const [reels, setReels] = useState<Reel[]>([]);
   const [clips, setClips] = useState<Clip[]>([]);
   const [activeTab, setActiveTab] = useState<"reels" | "library" | "analytics">("reels");
@@ -72,6 +72,8 @@ function ClientPortalPageInner() {
         setToast("✅ Instagram connected successfully!");
         setTimeout(() => setToast(null), 4000);
       }, 0);
+      // Refresh profile so followers/photo show immediately
+      if (user) refreshProfile(user.uid);
       window.history.replaceState({}, "", "/portal");
     } else if (error) {
       setTimeout(() => {

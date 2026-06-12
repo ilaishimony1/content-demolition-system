@@ -24,6 +24,20 @@ export function useAuth() {
   const router = useRouter();
   const pathname = usePathname();
 
+  async function refreshProfile(uid: string) {
+    const userDoc = await getDoc(doc(db, "users", uid));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      setProfile(prev => prev ? {
+        ...prev,
+        instagramConnected: data.instagramConnected,
+        profilePhoto: data.profilePhoto,
+        followers: data.followers,
+        instagramUsername: data.instagramUsername,
+      } : prev);
+    }
+  }
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -80,5 +94,5 @@ export function useAuth() {
     return () => unsubscribe();
   }, [router, pathname]);
 
-  return { user, profile, loading };
+  return { user, profile, loading, refreshProfile };
 }

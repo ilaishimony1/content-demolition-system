@@ -69,6 +69,9 @@ function ClientPortalPageInner() {
   const [activeTab, setActiveTab] = useState<"reels" | "library" | "analytics">("reels");
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [dateRange, setDateRange] = useState("1m");
+  const [contentType, setContentType] = useState("all");
+  const [sortBy, setSortBy] = useState("engagementRate");
   const [feedbackModal, setFeedbackModal] = useState<Reel | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -92,7 +95,8 @@ function ClientPortalPageInner() {
 
   async function loadAnalytics(clientId: string) {
     setAnalyticsLoading(true);
-    const res = await fetch(`/api/instagram/ai-analysis?clientId=${clientId}`);
+    const params = new URLSearchParams({ clientId, dateRange, contentType, sortBy });
+    const res = await fetch(`/api/instagram/ai-analysis?${params}`);
     const data = await res.json();
     if (!data.error) setAnalytics(data);
     setAnalyticsLoading(false);
@@ -394,13 +398,74 @@ function ClientPortalPageInner() {
                 <p className="text-lg font-medium text-white/50">Connect Instagram to see analytics</p>
               </div>
             ) : !analytics && !analyticsLoading ? (
-              <div className="text-center py-16 bg-[#111118] border border-white/10 rounded-2xl">
-                <div className="text-5xl mb-4">🤖</div>
-                <p className="text-white/80 font-semibold mb-2">AI-Powered Instagram Analysis</p>
-                <p className="text-white/40 text-sm mb-6">Claude analyses your last 25 posts — engagement patterns, best hooks, what to do more of</p>
+              <div className="bg-[#111118] border border-white/10 rounded-2xl p-6">
+                <div className="text-center mb-6">
+                  <div className="text-4xl mb-3">🤖</div>
+                  <p className="text-white/80 font-semibold mb-1">AI-Powered Instagram Analysis</p>
+                  <p className="text-white/40 text-sm">Claude reads your posts + engagement data and tells you exactly what works</p>
+                </div>
+
+                {/* Filters */}
+                <div className="space-y-4 mb-6">
+                  {/* Date Range */}
+                  <div>
+                    <p className="text-xs text-white/40 mb-2">📅 Time Period</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { val: "2w", label: "Last 2 weeks" },
+                        { val: "1m", label: "Last month" },
+                        { val: "3m", label: "Last 3 months" },
+                        { val: "6m", label: "Last 6 months" },
+                        { val: "all", label: "All time" },
+                      ].map(o => (
+                        <button key={o.val} onClick={() => setDateRange(o.val)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${dateRange === o.val ? "bg-orange-500 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"}`}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Content Type */}
+                  <div>
+                    <p className="text-xs text-white/40 mb-2">🎬 Content Type</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { val: "all", label: "All content" },
+                        { val: "VIDEO", label: "Reels / Videos" },
+                        { val: "CAROUSEL_ALBUM", label: "Carousels" },
+                        { val: "IMAGE", label: "Photos" },
+                      ].map(o => (
+                        <button key={o.val} onClick={() => setContentType(o.val)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${contentType === o.val ? "bg-orange-500 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"}`}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sort By */}
+                  <div>
+                    <p className="text-xs text-white/40 mb-2">📊 Rank Posts By</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { val: "engagementRate", label: "Engagement Rate" },
+                        { val: "likes", label: "Likes" },
+                        { val: "saves", label: "Saves" },
+                        { val: "reach", label: "Reach" },
+                      ].map(o => (
+                        <button key={o.val} onClick={() => setSortBy(o.val)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${sortBy === o.val ? "bg-orange-500 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"}`}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   onClick={() => profile.clientId && loadAnalytics(profile.clientId)}
-                  className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-8 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all"
+                  className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all"
                 >
                   🔍 Analyse My Content →
                 </button>
@@ -537,10 +602,10 @@ function ClientPortalPageInner() {
                 </div>
 
                 <button
-                  onClick={() => { setAnalytics(null); }}
+                  onClick={() => setAnalytics(null)}
                   className="w-full bg-white/5 hover:bg-white/10 text-white/40 py-3 rounded-xl text-sm transition-all"
                 >
-                  Run New Analysis
+                  🔄 New Analysis (change filters)
                 </button>
               </>
             ) : null}

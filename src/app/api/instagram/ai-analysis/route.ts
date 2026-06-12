@@ -31,6 +31,10 @@ async function getClientToken(clientId: string) {
 
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
+  const dateRange = req.nextUrl.searchParams.get("dateRange") || "all"; // "2w","1m","3m","6m","all"
+  const contentType = req.nextUrl.searchParams.get("contentType") || "all"; // "all","VIDEO","CAROUSEL_ALBUM","IMAGE"
+  const sortBy = req.nextUrl.searchParams.get("sortBy") || "engagementRate"; // "engagementRate","likes","saves","reach"
+
   if (!clientId) return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
 
   const creds = await getClientToken(clientId);
@@ -38,15 +42,33 @@ export async function GET(req: NextRequest) {
 
   const { token, igUserId, name, niche } = creds;
 
+  // Calculate date filter
+  const now = new Date();
+  let sinceDate: Date | null = null;
+  if (dateRange === "2w") sinceDate = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  else if (dateRange === "1m") sinceDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  else if (dateRange === "3m") sinceDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  else if (dateRange === "6m") sinceDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+
   try {
-    // 1. Fetch recent media
+    // 1. Fetch media — get more to allow for filtering
     const mediaRes = await fetch(
-      `https://graph.instagram.com/v19.0/${igUserId}/media?fields=id,caption,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=30&access_token=${token}`
+      `https://graph.instagram.com/v19.0/${igUserId}/media?fields=id,caption,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=50&access_token=${token}`
     );
     const mediaData = await mediaRes.json();
     if (mediaData.error) return NextResponse.json({ error: mediaData.error.message }, { status: 400 });
 
-    const posts = mediaData.data || [];
+    let posts = mediaData.data || [];
+
+    // Apply date filter
+    if (sinceDate) {
+      posts = posts.filter((p: Record<string, unknown>) => new Date(p.timestamp as string) >= sinceDate!);
+    }
+
+    // Apply content type filter
+    if (contentType !== "all") {
+      posts = posts.filter((p: Record<string, unknown>) => p.media_type === contentType);
+    }
 
     // 2. Fetch insights for each post
     const postsWithInsights = await Promise.all(
@@ -93,7 +115,12 @@ export async function GET(req: NextRequest) {
     );
 
     const validPosts = postsWithInsights.filter(Boolean);
-    const sorted = [...validPosts].sort((a, b) => b!.engagementRate - a!.engagementRate);
+    const sorted = [...validPosts].sort((a, b) => {
+      if (sortBy === "likes") return b!.likes - a!.likes;
+      if (sortBy === "saves") return b!.saves - a!.saves;
+      if (sortBy === "reach") return b!.reach - a!.reach;
+      return b!.engagementRate - a!.engagementRate;
+    });
 
     // 3. Send to Claude for deep analysis
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
@@ -112,7 +139,9 @@ Caption excerpt: "${p!.caption.slice(0, 200)}"`
         role: "user",
         content: `You are a top Instagram growth strategist analysing the account of ${name || clientId}, a content creator in the ${niche || "general"} niche.
 
-Here are their last ${sorted.length} posts sorted by engagement rate:
+Filter applied: ${dateRange === "all" ? "All time" : dateRange === "2w" ? "Last 2 weeks" : dateRange === "1m" ? "Last month" : dateRange === "3m" ? "Last 3 months" : "Last 6 months"}, Content type: ${contentType === "all" ? "All types" : contentType === "VIDEO" ? "Videos/Reels" : contentType === "CAROUSEL_ALBUM" ? "Carousels" : "Photos"}, Sorted by: ${sortBy}.
+
+Here are ${sorted.length} posts sorted by ${sortBy}:
 
 ${postsSummary}
 

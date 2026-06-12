@@ -41,29 +41,6 @@ function ClientPortalPageInner() {
   const searchParams = useSearchParams();
   const [toast, setToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (profile?.clientId) {
-      loadReels(profile.clientId);
-      loadClips(profile.clientId);
-    }
-  }, [profile]);
-
-  // Handle OAuth success/error from URL params
-  useEffect(() => {
-    const success = searchParams.get("success");
-    const error = searchParams.get("error");
-    if (success === "instagram_connected") {
-      setToast("✅ Instagram connected successfully!");
-      setTimeout(() => setToast(null), 4000);
-      // Clean URL
-      window.history.replaceState({}, "", "/portal");
-    } else if (error) {
-      setToast(`❌ ${error.replace(/_/g, " ")}`);
-      setTimeout(() => setToast(null), 4000);
-      window.history.replaceState({}, "", "/portal");
-    }
-  }, [searchParams]);
-
   async function loadReels(clientId: string) {
     const snap = await getDocs(
       query(collection(db, "reels"), where("clientId", "==", clientId), orderBy("createdAt", "desc"))
@@ -77,6 +54,33 @@ function ClientPortalPageInner() {
     );
     setClips(snap.docs.map(d => ({ id: d.id, ...d.data() } as Clip)));
   }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => {
+    if (profile?.clientId) {
+      loadReels(profile.clientId);
+      loadClips(profile.clientId);
+    }
+  }, [profile]);
+
+  // Handle OAuth success/error from URL params
+  useEffect(() => {
+    const success = searchParams.get("success");
+    const error = searchParams.get("error");
+    if (success === "instagram_connected") {
+      setTimeout(() => {
+        setToast("✅ Instagram connected successfully!");
+        setTimeout(() => setToast(null), 4000);
+      }, 0);
+      window.history.replaceState({}, "", "/portal");
+    } else if (error) {
+      setTimeout(() => {
+        setToast(`❌ ${error.replace(/_/g, " ")}`);
+        setTimeout(() => setToast(null), 4000);
+      }, 0);
+      window.history.replaceState({}, "", "/portal");
+    }
+  }, [searchParams]);
 
   async function handleApprove(reel: Reel) {
     await updateDoc(doc(db, "reels", reel.id), { status: "approved", feedback: "" });

@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -65,11 +66,11 @@ export default function Home() {
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Clients</h2>
-              <a href="/clients" className="text-xs text-orange-400 hover:text-orange-300">Manage →</a>
+              <Link href="/clients" className="text-xs text-orange-400 hover:text-orange-300">Manage →</Link>
             </div>
             {clients.length === 0 ? (
               <div className="text-center py-12 text-white/30 bg-[#111118] border border-white/10 rounded-xl">
-                <p>No clients yet — <a href="/clients" className="text-orange-400">add your first client</a></p>
+                <p>No clients yet — <Link href="/clients" className="text-orange-400">add your first client</Link></p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

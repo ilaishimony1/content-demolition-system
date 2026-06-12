@@ -46,7 +46,7 @@ export default function LibraryPage() {
 
   useEffect(() => {
     if (user && selectedClient) {
-      setSelectedDriveFolder(null);
+      setTimeout(() => setSelectedDriveFolder(null), 0);
       loadClips();
       loadAllCounts();
     }

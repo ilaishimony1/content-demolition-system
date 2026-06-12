@@ -42,7 +42,7 @@ export default function PrivacyPage() {
 
       <section className="mb-8">
         <h2 className="text-xl font-semibold mb-3">6. Third-Party Services</h2>
-        <p>We use the Instagram Graph API (Meta) to access and publish content. Your use of Instagram is subject to <a href="https://help.instagram.com/519522125107875" className="text-blue-600" target="_blank" rel="noopener noreferrer">Instagram's Privacy Policy</a>.</p>
+        <p>We use the Instagram Graph API (Meta) to access and publish content. Your use of Instagram is subject to <a href="https://help.instagram.com/519522125107875" className="text-blue-600" target="_blank" rel="noopener noreferrer">Instagram&apos;s Privacy Policy</a>.</p>
       </section>
 
       <section className="mb-8">

@@ -12,6 +12,9 @@ export interface UserProfile {
   role: "operator" | "client";
   clientId?: string;
   name?: string;
+  instagramConnected?: boolean;
+  profilePhoto?: string;
+  followers?: string;
 }
 
 export function useAuth() {
@@ -32,11 +35,18 @@ export function useAuth() {
         let clientId: string | undefined;
         let name: string | undefined;
 
+        let instagramConnected: boolean | undefined;
+        let profilePhoto: string | undefined;
+        let followers: string | undefined;
+
         if (userDoc.exists()) {
           const data = userDoc.data();
           role = data.role || "operator";
           clientId = data.clientId;
           name = data.name;
+          instagramConnected = data.instagramConnected;
+          profilePhoto = data.profilePhoto;
+          followers = data.followers;
         }
 
         const userProfile: UserProfile = {
@@ -45,6 +55,9 @@ export function useAuth() {
           role,
           clientId,
           name,
+          instagramConnected,
+          profilePhoto,
+          followers,
         };
         setProfile(userProfile);
 

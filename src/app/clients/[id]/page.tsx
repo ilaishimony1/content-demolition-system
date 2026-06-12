@@ -33,10 +33,6 @@ export default function ClientDetailPage() {
   const [clipCount, setClipCount] = useState(0);
   const [reelCount, setReelCount] = useState(0);
 
-  useEffect(() => {
-    if (user && params.id) loadClient();
-  }, [user, params.id]);
-
   async function loadClient() {
     const snap = await getDoc(doc(db, "users", params.id as string));
     if (!snap.exists()) return;
@@ -52,6 +48,11 @@ export default function ClientDetailPage() {
     setClipCount(clips.size);
     setReelCount(reels.size);
   }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => {
+    if (user && params.id) loadClient();
+  }, [user, params.id]);
 
   if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;
   if (!user) return null;

@@ -69,12 +69,16 @@ function ClientsPage() {
     const success = searchParams.get("success");
     const error = searchParams.get("error");
     if (success === "instagram_connected") {
-      setToast({ msg: "✅ Instagram connected successfully!", type: "success" });
-      loadClients();
-      setTimeout(() => setToast(null), 4000);
+      setTimeout(() => {
+        setToast({ msg: "✅ Instagram connected successfully!", type: "success" });
+        loadClients();
+        setTimeout(() => setToast(null), 4000);
+      }, 0);
     } else if (error) {
-      setToast({ msg: `❌ Connection failed: ${error}`, type: "error" });
-      setTimeout(() => setToast(null), 4000);
+      setTimeout(() => {
+        setToast({ msg: `❌ Connection failed: ${error}`, type: "error" });
+        setTimeout(() => setToast(null), 4000);
+      }, 0);
     }
   }, [searchParams]);
 

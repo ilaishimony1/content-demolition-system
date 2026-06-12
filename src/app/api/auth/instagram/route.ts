@@ -15,7 +15,8 @@ export async function GET(req: NextRequest) {
     "instagram_business_content_publish",
   ].join(",");
 
-  const state = Buffer.from(JSON.stringify({ clientId })).toString("base64");
+  const returnTo = req.nextUrl.searchParams.get("returnTo") || "clients";
+  const state = Buffer.from(JSON.stringify({ clientId, returnTo })).toString("base64");
 
   // Instagram Business API uses instagram.com OAuth directly
   const url = new URL("https://api.instagram.com/oauth/authorize");

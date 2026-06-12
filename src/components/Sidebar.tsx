@@ -17,11 +17,8 @@ const navItems = [
   { id: "analytics", label: "Analytics", icon: "📊", href: "/analytics" },
 ];
 
-export default function Sidebar({ user }: { user: User }) {
-  const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  const NavContent = () => (
+function NavContent({ user, pathname, setMobileOpen }: { user: User; pathname: string; setMobileOpen: (v: boolean) => void }) {
+  return (
     <>
       {/* Logo */}
       <div className="p-6 border-b border-white/10">
@@ -79,12 +76,17 @@ export default function Sidebar({ user }: { user: User }) {
       </div>
     </>
   );
+}
+
+export default function Sidebar({ user }: { user: User }) {
+  const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <>
       {/* Desktop Sidebar */}
       <div className="hidden md:flex w-64 bg-[#111118] border-r border-white/10 flex-col shrink-0">
-        <NavContent />
+        <NavContent user={user} pathname={pathname} setMobileOpen={setMobileOpen} />
       </div>
 
       {/* Mobile Top Bar */}
@@ -107,7 +109,7 @@ export default function Sidebar({ user }: { user: User }) {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-40 flex">
           <div className="w-72 bg-[#111118] border-r border-white/10 flex flex-col pt-14">
-            <NavContent />
+            <NavContent user={user} pathname={pathname} setMobileOpen={setMobileOpen} />
           </div>
           <div className="flex-1 bg-black/60" onClick={() => setMobileOpen(false)} />
         </div>

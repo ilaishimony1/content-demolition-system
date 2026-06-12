@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useAuth } from "@/lib/useAuth";
 import { signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { collection, query, where, getDocs, updateDoc, doc, orderBy } from "firebase/firestore";
 
 interface Reel {
@@ -29,7 +29,7 @@ interface Clip {
   status?: string;
 }
 
-export default function ClientPortalPage() {
+function ClientPortalPageInner() {
   const { user, profile, loading } = useAuth();
   const [reels, setReels] = useState<Reel[]>([]);
   const [clips, setClips] = useState<Clip[]>([]);
@@ -38,6 +38,8 @@ export default function ClientPortalPage() {
   const [feedbackText, setFeedbackText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (profile?.clientId) {
@@ -45,6 +47,22 @@ export default function ClientPortalPage() {
       loadClips(profile.clientId);
     }
   }, [profile]);
+
+  // Handle OAuth success/error from URL params
+  useEffect(() => {
+    const success = searchParams.get("success");
+    const error = searchParams.get("error");
+    if (success === "instagram_connected") {
+      setToast("✅ Instagram connected successfully!");
+      setTimeout(() => setToast(null), 4000);
+      // Clean URL
+      window.history.replaceState({}, "", "/portal");
+    } else if (error) {
+      setToast(`❌ ${error.replace(/_/g, " ")}`);
+      setTimeout(() => setToast(null), 4000);
+      window.history.replaceState({}, "", "/portal");
+    }
+  }, [searchParams]);
 
   async function loadReels(clientId: string) {
     const snap = await getDocs(
@@ -106,6 +124,12 @@ export default function ClientPortalPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-[#111118] border border-white/20 rounded-xl px-5 py-3 text-sm font-medium shadow-2xl animate-in fade-in slide-in-from-top-2">
+          {toast}
+        </div>
+      )}
       {/* Header */}
       <div className="border-b border-white/10 px-4 md:px-8 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -132,6 +156,23 @@ export default function ClientPortalPage() {
           <h1 className="text-2xl md:text-3xl font-bold mb-1">Hey {firstName} 👋</h1>
           <p className="text-white/40 text-sm">Here&apos;s your content overview</p>
         </div>
+
+        {/* Connect Instagram banner */}
+        {!profile.instagramConnected && (
+          <div className="bg-pink-500/10 border border-pink-500/30 rounded-2xl p-4 mb-6 flex items-center gap-4">
+            <div className="text-2xl">📸</div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-pink-300">Connect your Instagram</p>
+              <p className="text-xs text-pink-400/60 mt-0.5">So we can post your content automatically</p>
+            </div>
+            <a
+              href={`/api/auth/instagram?clientId=${profile.clientId}&returnTo=portal`}
+              className="text-xs bg-gradient-to-r from-pink-500 to-purple-600 hover:opacity-90 text-white px-4 py-2 rounded-lg font-medium transition-all"
+            >
+              Connect →
+            </a>
+          </div>
+        )}
 
         {/* Action needed banner */}
         {pendingReels.length > 0 && (
@@ -334,5 +375,13 @@ export default function ClientPortalPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ClientPortalPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>}>
+      <ClientPortalPageInner />
+    </Suspense>
   );
 }

@@ -60,12 +60,24 @@ export async function GET(req: NextRequest) {
   const error = req.nextUrl.searchParams.get("error");
   const baseUrl = process.env.NEXTAUTH_URL!;
 
-  if (error) return NextResponse.redirect(`${baseUrl}/clients?error=instagram_denied`);
-  if (!code || !state) return NextResponse.redirect(`${baseUrl}/clients?error=missing_params`);
+  // Try to extract returnTo from state early so error redirects go to the right page
+  let earlyReturnTo = "clients";
+  if (state) {
+    try {
+      const parsed = JSON.parse(Buffer.from(state, "base64").toString());
+      earlyReturnTo = parsed.returnTo || "clients";
+    } catch { /* ignore */ }
+  }
+
+  if (error) return NextResponse.redirect(`${baseUrl}/${earlyReturnTo}?error=instagram_denied`);
+  if (!code || !state) return NextResponse.redirect(`${baseUrl}/${earlyReturnTo}?error=missing_params`);
 
   let clientId: string;
+  let returnTo = earlyReturnTo;
   try {
-    clientId = JSON.parse(Buffer.from(state, "base64").toString()).clientId;
+    const parsed = JSON.parse(Buffer.from(state, "base64").toString());
+    clientId = parsed.clientId;
+    returnTo = parsed.returnTo || "clients";
   } catch {
     return NextResponse.redirect(`${baseUrl}/clients?error=invalid_state`);
   }
@@ -127,9 +139,9 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.redirect(`${baseUrl}/clients?success=instagram_connected&client=${clientId}`);
+    return NextResponse.redirect(`${baseUrl}/${returnTo}?success=instagram_connected&client=${clientId}`);
   } catch (err) {
     console.error("Instagram OAuth error:", err);
-    return NextResponse.redirect(`${baseUrl}/clients?error=oauth_failed`);
+    return NextResponse.redirect(`${baseUrl}/${earlyReturnTo}?error=oauth_failed`);
   }
 }

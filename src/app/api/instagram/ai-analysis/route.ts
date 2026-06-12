@@ -202,6 +202,7 @@ Be specific to their actual content, not generic advice.`
 
   } catch (err) {
     console.error("AI analysis error:", err);
-    return NextResponse.json({ error: "Analysis failed" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: "Analysis failed", detail: msg }, { status: 500 });
   }
 }

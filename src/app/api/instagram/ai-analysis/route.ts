@@ -31,9 +31,10 @@ async function getClientToken(clientId: string) {
 
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
-  const dateRange = req.nextUrl.searchParams.get("dateRange") || "all"; // "2w","1m","3m","6m","all"
-  const contentType = req.nextUrl.searchParams.get("contentType") || "all"; // "all","VIDEO","CAROUSEL_ALBUM","IMAGE"
-  const sortBy = req.nextUrl.searchParams.get("sortBy") || "engagementRate"; // "engagementRate","likes","saves","reach"
+  const dateRange = req.nextUrl.searchParams.get("dateRange") || "all";
+  const contentType = req.nextUrl.searchParams.get("contentType") || "all";
+  const sortBy = req.nextUrl.searchParams.get("sortBy") || "engagementRate";
+  const freePrompt = req.nextUrl.searchParams.get("freePrompt") || "";
 
   if (!clientId) return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
 
@@ -132,37 +133,56 @@ Engagement Rate: ${p!.engagementRate}% | Likes: ${p!.likes} | Comments: ${p!.com
 Caption excerpt: "${p!.caption.slice(0, 200)}"`
     ).join("\n\n");
 
+    const baseContext = `You are a top Instagram growth strategist analysing the account of ${name || clientId}, a content creator in the ${niche || "general"} niche.
+
+Filter: ${dateRange === "all" ? "All time" : dateRange === "2w" ? "Last 2 weeks" : dateRange === "1m" ? "Last month" : dateRange === "3m" ? "Last 3 months" : "Last 6 months"} | Type: ${contentType === "all" ? "All" : contentType === "VIDEO" ? "Reels/Videos" : contentType === "CAROUSEL_ALBUM" ? "Carousels" : "Photos"} | Sorted by: ${sortBy}
+
+${sorted.length} posts data:
+
+${postsSummary}`;
+
+    // Free-text prompt mode — just answer the question
+    if (freePrompt) {
+      const freeMessage = await anthropic.messages.create({
+        model: "claude-opus-4-5",
+        max_tokens: 1000,
+        messages: [{
+          role: "user",
+          content: `${baseContext}
+
+The operator is asking: "${freePrompt}"
+
+Answer directly and specifically using the real data above. Be sharp, actionable, and specific — no generic advice.`
+        }],
+      });
+      const freeAnswer = freeMessage.content[0].type === "text" ? freeMessage.content[0].text : "";
+      return NextResponse.json({ freeAnswer, posts: sorted, totalAnalysed: validPosts.length });
+    }
+
+    // Standard analysis mode
     const message = await anthropic.messages.create({
       model: "claude-opus-4-5",
       max_tokens: 1500,
       messages: [{
         role: "user",
-        content: `You are a top Instagram growth strategist analysing the account of ${name || clientId}, a content creator in the ${niche || "general"} niche.
-
-Filter applied: ${dateRange === "all" ? "All time" : dateRange === "2w" ? "Last 2 weeks" : dateRange === "1m" ? "Last month" : dateRange === "3m" ? "Last 3 months" : "Last 6 months"}, Content type: ${contentType === "all" ? "All types" : contentType === "VIDEO" ? "Videos/Reels" : contentType === "CAROUSEL_ALBUM" ? "Carousels" : "Photos"}, Sorted by: ${sortBy}.
-
-Here are ${sorted.length} posts sorted by ${sortBy}:
-
-${postsSummary}
+        content: `${baseContext}
 
 Provide a sharp, actionable analysis in JSON format with these exact keys:
 {
   "topPatterns": ["3-4 bullet points about what their best content has in common"],
-  "bestHooks": [{"hook": "...", "why": "why this hook worked", "engagementRate": "X%"}] (top 5 hooks from talking/face posts),
-  "worstHooks": [{"hook": "...", "why": "why this underperformed"}] (2-3 weak hooks),
+  "bestHooks": [{"hook": "...", "why": "why this hook worked", "engagementRate": "X%"}],
+  "worstHooks": [{"hook": "...", "why": "why this underperformed"}],
   "contentInsights": "2-3 sentences about their content style and what their audience responds to",
   "topRecommendations": ["4-5 specific actionable things to do more of"],
   "avoidList": ["2-3 specific things to stop doing"],
   "hookFormula": "A 1-2 sentence formula for their best performing hook style"
 }
 
-Be specific to their actual content, not generic advice. Use the real data.`
+Be specific to their actual content, not generic advice.`
       }],
     });
 
     const rawText = message.content[0].type === "text" ? message.content[0].text : "";
-
-    // Parse JSON from Claude's response
     let aiInsights;
     try {
       const jsonMatch = rawText.match(/\{[\s\S]*\}/);

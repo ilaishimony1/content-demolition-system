@@ -244,7 +244,7 @@ export default function ClientDetailPage() {
                     </div>
                     <div className="flex flex-wrap gap-1.5 items-center ml-auto">
                       <span className="text-xs text-white/30 mr-1">Sort</span>
-                      {[{v:"engagementRate",l:"Eng%"},{v:"likes",l:"Likes"},{v:"saves",l:"Saves"},{v:"reach",l:"Reach"}].map(o => (
+                      {[{v:"likes",l:"Likes"},{v:"saves",l:"Saves"},{v:"reach",l:"Reach"},{v:"engagementRate",l:"Shares"}].map(o => (
                         <button key={o.v} onClick={() => { setSortBy(o.v); if (client.clientId) loadFeed(client.clientId, dateRange, contentType, o.v); }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${sortBy===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
                       ))}
@@ -252,8 +252,6 @@ export default function ClientDetailPage() {
                     {posts.length > 0 && (
                       <div className="flex gap-3 text-xs text-white/40 ml-2">
                         <span>{posts.length} posts</span>
-                        <span>avg {avgEngRate}% eng</span>
-                        <span>top {posts[0]?.engagementRate}%</span>
                       </div>
                     )}
                   </div>
@@ -263,22 +261,23 @@ export default function ClientDetailPage() {
                     <div className="text-center py-16 text-white/30 text-sm animate-pulse">Loading feed...</div>
                   ) : (
                     <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                      {posts.map((p, i) => (
-                        <button key={p.id} onClick={() => setSelectedPost(p)}
-                          className={`relative aspect-square rounded-xl overflow-hidden bg-[#111118] border transition-all hover:scale-[1.02] hover:border-orange-500/50 ${selectedPost?.id===p.id?"border-orange-500":"border-white/10"}`}>
-                          {p.thumbnailUrl
-                            ? <img src={p.thumbnailUrl} alt="" className="w-full h-full object-cover" />
-                            : <div className="w-full h-full flex items-center justify-center text-2xl">{p.mediaType==="VIDEO"?"🎬":p.mediaType==="CAROUSEL_ALBUM"?"🖼️":"📸"}</div>
-                          }
-                          {/* Top badge */}
-                          {i === 0 && <div className="absolute top-1.5 left-1.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">#1</div>}
-                          {p.mediaType === "VIDEO" && <div className="absolute top-1.5 right-1.5 text-[10px]">▶</div>}
-                          {/* Engagement overlay */}
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1.5">
-                            <p className={`text-xs font-bold ${p.engagementRate > parseFloat(avgEngRate) ? "text-green-400" : "text-white/60"}`}>{p.engagementRate}%</p>
-                          </div>
-                        </button>
-                      ))}
+                      {posts.map((p, i) => {
+                        const isTop20 = i < Math.ceil(posts.length * 0.2);
+                        return (
+                          <button key={p.id} onClick={() => setSelectedPost(p)}
+                            className={`relative aspect-square rounded-xl overflow-hidden bg-[#111118] border transition-all hover:scale-[1.02] ${selectedPost?.id===p.id ? "border-orange-500" : isTop20 ? "border-yellow-500/40 hover:border-yellow-500/70" : "border-white/10 hover:border-orange-500/50"}`}>
+                            {p.thumbnailUrl
+                              ? <img src={p.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                              : <div className="w-full h-full flex items-center justify-center text-2xl">{p.mediaType==="VIDEO"?"🎬":p.mediaType==="CAROUSEL_ALBUM"?"🖼️":"📸"}</div>
+                            }
+                            {/* Badges */}
+                            {i === 0 && <div className="absolute top-1.5 left-1.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">#1</div>}
+                            {isTop20 && i > 0 && <div className="absolute top-1.5 left-1.5 text-sm">🔥</div>}
+                            {p.mediaType === "VIDEO" && <div className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] px-1 py-0.5 rounded">▶</div>}
+                            {p.mediaType === "CAROUSEL_ALBUM" && <div className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] px-1 py-0.5 rounded">⊞</div>}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -292,12 +291,20 @@ export default function ClientDetailPage() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-white/80 leading-snug line-clamp-3">{selectedPost.caption || "No caption"}</p>
                           <p className="text-xs text-white/30 mt-1">{new Date(selectedPost.timestamp).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" })}</p>
-                          <div className="flex gap-3 mt-2 text-sm">
-                            <span>❤️ {selectedPost.likes}</span>
-                            <span>💬 {selectedPost.comments}</span>
-                            <span>🔖 {selectedPost.saves}</span>
-                            <span>↗️ {selectedPost.shares}</span>
-                            <span className={`font-bold ${selectedPost.engagementRate > parseFloat(avgEngRate) ? "text-green-400" : "text-white/50"}`}>{selectedPost.engagementRate}% eng</span>
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {[
+                              { icon: "❤️", label: "Likes", val: selectedPost.likes },
+                              { icon: "💬", label: "Comments", val: selectedPost.comments },
+                              { icon: "🔖", label: "Saves", val: selectedPost.saves },
+                              { icon: "↗️", label: "Shares", val: selectedPost.shares },
+                              { icon: "👁️", label: "Reach", val: selectedPost.reach },
+                            ].map(s => (
+                              <div key={s.label} className="bg-white/5 rounded-xl px-3 py-2 text-center min-w-[56px]">
+                                <p className="text-sm">{s.icon}</p>
+                                <p className="text-sm font-bold">{s.val.toLocaleString()}</p>
+                                <p className="text-[10px] text-white/30">{s.label}</p>
+                              </div>
+                            ))}
                           </div>
                         </div>
                         <button onClick={() => setSelectedPost(null)} className="text-white/30 hover:text-white text-lg leading-none">✕</button>

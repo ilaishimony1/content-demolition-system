@@ -49,35 +49,35 @@ export default function ClientDetailPage() {
   const [reelCount, setReelCount] = useState(0);
   const [activeTab, setActiveTab] = useState<"overview" | "analytics">("overview");
   // Analytics state
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
-  const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsError, setAnalyticsError] = useState("");
+  const [posts, setPosts] = useState<AnalyticsPost[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
   const [dateRange, setDateRange] = useState("1m");
   const [contentType, setContentType] = useState("all");
   const [sortBy, setSortBy] = useState("engagementRate");
   const [freePrompt, setFreePrompt] = useState("");
   const [freeAnswer, setFreeAnswer] = useState("");
   const [freeLoading, setFreeLoading] = useState(false);
+  const [selectedPost, setSelectedPost] = useState<AnalyticsPost | null>(null);
   const [videoAnalyses, setVideoAnalyses] = useState<Record<string, { loading?: boolean; error?: string; data?: Record<string, unknown> }>>({});
+  const [avgEngRate, setAvgEngRate] = useState("0");
 
-  async function loadAnalytics() {
-    if (!client?.clientId) return;
-    setAnalyticsLoading(true);
-    setAnalyticsError("");
-    const params2 = new URLSearchParams({ clientId: client.clientId, dateRange, contentType, sortBy });
+  async function loadFeed(cid: string, dr = dateRange, ct = contentType, sb = sortBy) {
+    setPostsLoading(true);
+    const params2 = new URLSearchParams({ clientId: cid, dateRange: dr, contentType: ct, sortBy: sb });
     const res = await fetch(`/api/instagram/ai-analysis?${params2}`);
     const data = await res.json();
-    if (data.error) setAnalyticsError(data.error);
-    else setAnalytics(data);
-    setAnalyticsLoading(false);
+    if (!data.error) {
+      setPosts(data.posts || []);
+      setAvgEngRate(data.avgEngagementRate || "0");
+    }
+    setPostsLoading(false);
   }
 
   async function askFreePrompt() {
     if (!freePrompt.trim() || !client?.clientId) return;
     setFreeLoading(true);
     setFreeAnswer("");
-    // Fetch posts data first, then ask Claude the custom question
-    const params2 = new URLSearchParams({ clientId: client.clientId, dateRange: "all", contentType: "all", sortBy: "engagementRate", freePrompt: freePrompt.trim() });
+    const params2 = new URLSearchParams({ clientId: client.clientId, dateRange, contentType, sortBy: "engagementRate", freePrompt: freePrompt.trim() });
     const res = await fetch(`/api/instagram/ai-analysis?${params2}`);
     const data = await res.json();
     if (data.freeAnswer) setFreeAnswer(data.freeAnswer);
@@ -122,6 +122,13 @@ export default function ClientDetailPage() {
   useEffect(() => {
     if (user && params.id) loadClient();
   }, [user, params.id]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeTab === "analytics" && client?.clientId && client.instagramConnected && posts.length === 0) {
+      loadFeed(client.clientId);
+    }
+  }, [activeTab, client]);
 
   if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;
   if (!user) return null;
@@ -189,7 +196,7 @@ export default function ClientDetailPage() {
 
         <div className="p-4 md:p-8 space-y-6">
           {activeTab === "analytics" && (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {!client.instagramConnected ? (
                 <div className="text-center py-16 bg-[#111118] border border-white/10 rounded-2xl text-white/40">
                   <div className="text-4xl mb-3">📸</div>
@@ -197,190 +204,142 @@ export default function ClientDetailPage() {
                 </div>
               ) : (
                 <>
-                  {/* Free-text AI prompt */}
-                  <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-2xl p-5">
-                    <h3 className="font-semibold mb-1 text-orange-400">🤖 Ask Claude Anything</h3>
-                    <p className="text-xs text-white/40 mb-3">e.g. &quot;What hooks worked best for talking reels?&quot; or &quot;Compare January vs March content&quot;</p>
+                  {/* AI Chat Bar */}
+                  <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-2xl p-4">
                     <div className="flex gap-2">
                       <input
                         value={freePrompt}
                         onChange={e => setFreePrompt(e.target.value)}
                         onKeyDown={e => e.key === "Enter" && askFreePrompt()}
-                        placeholder="Ask anything about this client's content..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50"
+                        placeholder='🤖 Ask Claude anything — "best hooks from last month", "compare reels vs carousels"...'
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-orange-500/50"
                       />
-                      <button
-                        onClick={askFreePrompt}
-                        disabled={freeLoading || !freePrompt.trim()}
-                        className="bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                      >
+                      <button onClick={askFreePrompt} disabled={freeLoading || !freePrompt.trim()}
+                        className="bg-orange-500 hover:bg-orange-400 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap">
                         {freeLoading ? "..." : "Ask →"}
                       </button>
                     </div>
                     {freeAnswer && (
-                      <div className="mt-4 bg-black/30 rounded-xl p-4 text-sm text-white/80 leading-relaxed whitespace-pre-wrap">
+                      <div className="mt-3 bg-black/30 rounded-xl p-4 text-sm text-white/80 leading-relaxed whitespace-pre-wrap">
                         {freeAnswer}
                       </div>
                     )}
                   </div>
 
-                  {/* Filters */}
-                  {!analytics && !analyticsLoading && (
-                    <div className="bg-[#111118] border border-white/10 rounded-2xl p-5 space-y-4">
-                      <h3 className="font-semibold">📊 Deep Analysis</h3>
-                      <div>
-                        <p className="text-xs text-white/40 mb-2">📅 Time Period</p>
-                        <div className="flex flex-wrap gap-2">
-                          {[{v:"2w",l:"Last 2 weeks"},{v:"1m",l:"Last month"},{v:"3m",l:"Last 3 months"},{v:"6m",l:"Last 6 months"},{v:"all",l:"All time"}].map(o => (
-                            <button key={o.v} onClick={() => setDateRange(o.v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${dateRange===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
-                          ))}
-                        </div>
+                  {/* Filters row */}
+                  <div className="bg-[#111118] border border-white/10 rounded-2xl p-4 flex flex-wrap gap-4 items-center">
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      <span className="text-xs text-white/30 mr-1">Period</span>
+                      {[{v:"2w",l:"2W"},{v:"1m",l:"1M"},{v:"3m",l:"3M"},{v:"6m",l:"6M"},{v:"all",l:"All"}].map(o => (
+                        <button key={o.v} onClick={() => { setDateRange(o.v); if (client.clientId) loadFeed(client.clientId, o.v, contentType, sortBy); }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${dateRange===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      <span className="text-xs text-white/30 mr-1">Type</span>
+                      {[{v:"all",l:"All"},{v:"VIDEO",l:"Reels"},{v:"CAROUSEL_ALBUM",l:"Carousels"},{v:"IMAGE",l:"Photos"}].map(o => (
+                        <button key={o.v} onClick={() => { setContentType(o.v); if (client.clientId) loadFeed(client.clientId, dateRange, o.v, sortBy); }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${contentType===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 items-center ml-auto">
+                      <span className="text-xs text-white/30 mr-1">Sort</span>
+                      {[{v:"engagementRate",l:"Eng%"},{v:"likes",l:"Likes"},{v:"saves",l:"Saves"},{v:"reach",l:"Reach"}].map(o => (
+                        <button key={o.v} onClick={() => { setSortBy(o.v); if (client.clientId) loadFeed(client.clientId, dateRange, contentType, o.v); }}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${sortBy===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
+                      ))}
+                    </div>
+                    {posts.length > 0 && (
+                      <div className="flex gap-3 text-xs text-white/40 ml-2">
+                        <span>{posts.length} posts</span>
+                        <span>avg {avgEngRate}% eng</span>
+                        <span>top {posts[0]?.engagementRate}%</span>
                       </div>
-                      <div>
-                        <p className="text-xs text-white/40 mb-2">🎬 Content Type</p>
-                        <div className="flex flex-wrap gap-2">
-                          {[{v:"all",l:"All"},{v:"VIDEO",l:"Reels"},{v:"CAROUSEL_ALBUM",l:"Carousels"},{v:"IMAGE",l:"Photos"}].map(o => (
-                            <button key={o.v} onClick={() => setContentType(o.v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${contentType===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs text-white/40 mb-2">📊 Sort By</p>
-                        <div className="flex flex-wrap gap-2">
-                          {[{v:"engagementRate",l:"Engagement Rate"},{v:"likes",l:"Likes"},{v:"saves",l:"Saves"},{v:"reach",l:"Reach"}].map(o => (
-                            <button key={o.v} onClick={() => setSortBy(o.v)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${sortBy===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
-                          ))}
-                        </div>
-                      </div>
-                      {analyticsError && <p className="text-red-400 text-xs">{analyticsError}</p>}
-                      <button onClick={loadAnalytics} className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition-all">
-                        🔍 Run Analysis →
-                      </button>
+                    )}
+                  </div>
+
+                  {/* Feed grid */}
+                  {postsLoading ? (
+                    <div className="text-center py-16 text-white/30 text-sm animate-pulse">Loading feed...</div>
+                  ) : (
+                    <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                      {posts.map((p, i) => (
+                        <button key={p.id} onClick={() => setSelectedPost(p)}
+                          className={`relative aspect-square rounded-xl overflow-hidden bg-[#111118] border transition-all hover:scale-[1.02] hover:border-orange-500/50 ${selectedPost?.id===p.id?"border-orange-500":"border-white/10"}`}>
+                          {p.thumbnailUrl
+                            ? <img src={p.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                            : <div className="w-full h-full flex items-center justify-center text-2xl">{p.mediaType==="VIDEO"?"🎬":p.mediaType==="CAROUSEL_ALBUM"?"🖼️":"📸"}</div>
+                          }
+                          {/* Top badge */}
+                          {i === 0 && <div className="absolute top-1.5 left-1.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">#1</div>}
+                          {p.mediaType === "VIDEO" && <div className="absolute top-1.5 right-1.5 text-[10px]">▶</div>}
+                          {/* Engagement overlay */}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1.5">
+                            <p className={`text-xs font-bold ${p.engagementRate > parseFloat(avgEngRate) ? "text-green-400" : "text-white/60"}`}>{p.engagementRate}%</p>
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   )}
 
-                  {analyticsLoading && (
-                    <div className="text-center py-16 bg-[#111118] border border-white/10 rounded-2xl">
-                      <div className="text-4xl mb-3 animate-pulse">🤖</div>
-                      <p className="text-white/60">Claude is analysing {client.name}&apos;s content...</p>
-                    </div>
-                  )}
-
-                  {analytics && !analyticsLoading && (
-                    <div className="space-y-5">
-                      {/* Summary */}
-                      <div className="grid grid-cols-3 gap-3">
-                        {[
-                          {l:"Posts Analysed", v:analytics.totalAnalysed, i:"📸"},
-                          {l:"Avg Eng. Rate", v:`${analytics.avgEngagementRate}%`, i:"🔥"},
-                          {l:"Top Post Rate", v:`${analytics.posts[0]?.engagementRate||0}%`, i:"⚡"},
-                        ].map(s => (
-                          <div key={s.l} className="bg-[#111118] border border-white/10 rounded-xl p-4 text-center">
-                            <div className="text-xl mb-1">{s.i}</div>
-                            <div className="text-xl font-bold">{s.v}</div>
-                            <div className="text-xs text-white/40 mt-1">{s.l}</div>
+                  {/* Selected post panel */}
+                  {selectedPost && (
+                    <div className="bg-[#111118] border border-orange-500/30 rounded-2xl p-5 space-y-4">
+                      <div className="flex gap-4">
+                        {selectedPost.thumbnailUrl && (
+                          <img src={selectedPost.thumbnailUrl} alt="" className="w-24 h-24 rounded-xl object-cover flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white/80 leading-snug line-clamp-3">{selectedPost.caption || "No caption"}</p>
+                          <p className="text-xs text-white/30 mt-1">{new Date(selectedPost.timestamp).toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" })}</p>
+                          <div className="flex gap-3 mt-2 text-sm">
+                            <span>❤️ {selectedPost.likes}</span>
+                            <span>💬 {selectedPost.comments}</span>
+                            <span>🔖 {selectedPost.saves}</span>
+                            <span>↗️ {selectedPost.shares}</span>
+                            <span className={`font-bold ${selectedPost.engagementRate > parseFloat(avgEngRate) ? "text-green-400" : "text-white/50"}`}>{selectedPost.engagementRate}% eng</span>
                           </div>
-                        ))}
+                        </div>
+                        <button onClick={() => setSelectedPost(null)} className="text-white/30 hover:text-white text-lg leading-none">✕</button>
                       </div>
 
-                      {analytics.aiInsights?.hookFormula && (
-                        <div className="bg-orange-500/10 border border-orange-500/30 rounded-xl p-4">
-                          <p className="text-xs text-orange-400 font-semibold mb-1">🎣 Hook Formula</p>
-                          <p className="text-sm text-white/80">{analytics.aiInsights.hookFormula}</p>
-                        </div>
-                      )}
-                      {analytics.aiInsights?.contentInsights && (
-                        <div className="bg-[#111118] border border-white/10 rounded-xl p-4">
-                          <p className="text-xs text-white/40 font-semibold mb-2">🧠 Audience Insights</p>
-                          <p className="text-sm text-white/70">{analytics.aiInsights.contentInsights}</p>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {analytics.aiInsights?.topRecommendations && (
-                          <div className="bg-[#111118] border border-green-500/20 rounded-xl p-4">
-                            <p className="text-xs text-green-400 font-semibold mb-3">🚀 Do More Of</p>
-                            <div className="space-y-1.5">
-                              {analytics.aiInsights.topRecommendations.map((r,i) => (
-                                <div key={i} className="flex gap-2 text-sm text-white/70"><span className="text-green-400">→</span>{r}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {analytics.aiInsights?.avoidList && (
-                          <div className="bg-[#111118] border border-red-500/20 rounded-xl p-4">
-                            <p className="text-xs text-red-400 font-semibold mb-3">🛑 Stop Doing</p>
-                            <div className="space-y-1.5">
-                              {analytics.aiInsights.avoidList.map((r,i) => (
-                                <div key={i} className="flex gap-2 text-sm text-white/70"><span className="text-red-400">✕</span>{r}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      {analytics.aiInsights?.bestHooks && (
-                        <div className="bg-[#111118] border border-white/10 rounded-xl p-4">
-                          <p className="text-xs text-white/40 font-semibold mb-3">🔥 Best Hooks</p>
-                          <div className="space-y-3">
-                            {analytics.aiInsights.bestHooks.map((h,i) => (
-                              <div key={i} className="border-l-2 border-orange-500/40 pl-3">
-                                <p className="text-sm text-white/80">&ldquo;{h.hook}&rdquo;</p>
-                                <p className="text-xs text-orange-400 mt-0.5">{h.engagementRate} · {h.why}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {/* Posts list */}
-                      <div>
-                        <p className="text-xs text-white/40 mb-3">All posts ranked by {sortBy}</p>
-                        <div className="space-y-2">
-                          {analytics.posts.map((p,i) => {
-                            const va = videoAnalyses[p.id];
-                            return (
-                              <div key={p.id} className={`bg-[#111118] border rounded-xl p-3 ${i===0?"border-orange-500/40":"border-white/10"}`}>
-                                <div className="flex gap-3 items-center">
-                                  <span className={`text-xs font-bold w-5 ${i===0?"text-orange-400":"text-white/30"}`}>#{i+1}</span>
-                                  {p.thumbnailUrl && <img src={p.thumbnailUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs text-white/70 truncate">{p.hook||"No caption"}</p>
-                                    <div className="flex gap-2 text-xs text-white/30 mt-0.5">
-                                      <span>❤️{p.likes}</span><span>💬{p.comments}</span><span>🔖{p.saves}</span>
+                      {/* Claude Vision analysis */}
+                      {selectedPost.mediaType === "VIDEO" && (() => {
+                        const va = videoAnalyses[selectedPost.id];
+                        return (
+                          <div>
+                            {!va?.data && (
+                              <button onClick={() => analyseVideo(selectedPost)} disabled={va?.loading}
+                                className="w-full bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50">
+                                {va?.loading ? "🎬 Claude is watching the video..." : "🎬 Analyse with Claude Vision"}
+                              </button>
+                            )}
+                            {va?.error && <p className="text-xs text-red-400">{va.error}</p>}
+                            {va?.data && (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                  {[
+                                    { l: "Content Type", v: String(va.data.content_type || "—") },
+                                    { l: "Energy", v: String(va.data.energy_level || "—") },
+                                    { l: "Hook Quality", v: `${va.data.hook_quality || "—"}/10` },
+                                    { l: "Usability", v: `${va.data.usability_score || "—"}/10` },
+                                    { l: "Hook Type", v: String(va.data.hook_type || "—") },
+                                    { l: "Setting", v: String(va.data.setting || "—") },
+                                    { l: "Has Face", v: va.data.has_face ? "Yes" : "No" },
+                                    { l: "Talking to Cam", v: va.data.is_talking_to_camera ? "Yes" : "No" },
+                                  ].map(s => (
+                                    <div key={s.l} className="bg-white/5 rounded-lg px-3 py-2 text-center">
+                                      <p className="text-[10px] text-white/40 mb-0.5">{s.l}</p>
+                                      <p className="text-xs font-semibold text-white capitalize">{s.v}</p>
                                     </div>
-                                  </div>
-                                  <span className={`text-sm font-bold ${p.engagementRate>parseFloat(analytics.avgEngagementRate)?"text-green-400":"text-white/40"}`}>{p.engagementRate}%</span>
-                                  {p.mediaType === "VIDEO" && !va?.data && (
-                                    <button
-                                      onClick={() => analyseVideo(p)}
-                                      disabled={va?.loading}
-                                      className="ml-1 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 px-2 py-1 rounded-lg transition-all disabled:opacity-50 whitespace-nowrap"
-                                    >
-                                      {va?.loading ? "..." : "🎬 Analyse"}
-                                    </button>
-                                  )}
+                                  ))}
                                 </div>
-                                {va?.error && <p className="text-xs text-red-400 mt-2 pl-8">{va.error}</p>}
-                                {va?.data && (
-                                  <div className="mt-2 ml-8 grid grid-cols-2 md:grid-cols-4 gap-2">
-                                    {[
-                                      { l: "Type", v: String(va.data.content_type || "—") },
-                                      { l: "Energy", v: String(va.data.energy_level || "—") },
-                                      { l: "Hook Quality", v: `${va.data.hook_quality || "—"}/10` },
-                                      { l: "Usability", v: `${va.data.usability_score || "—"}/10` },
-                                    ].map(s => (
-                                      <div key={s.l} className="bg-white/5 rounded-lg px-2 py-1.5 text-center">
-                                        <p className="text-xs text-white/40">{s.l}</p>
-                                        <p className="text-xs font-semibold text-white capitalize">{s.v}</p>
-                                      </div>
-                                    ))}
-                                    {va.data.notes ? <p className="col-span-2 md:col-span-4 text-xs text-white/50 italic">{String(va.data.notes)}</p> : null}
-                                  </div>
-                                )}
+                                {va.data.notes ? <p className="text-xs text-white/50 italic bg-white/5 rounded-xl px-3 py-2">{String(va.data.notes)}</p> : null}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <button onClick={() => setAnalytics(null)} className="w-full bg-white/5 hover:bg-white/10 text-white/40 py-2.5 rounded-xl text-sm">🔄 New Analysis</button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </>

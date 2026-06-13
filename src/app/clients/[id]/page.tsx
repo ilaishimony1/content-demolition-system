@@ -10,7 +10,7 @@ import { useParams, useRouter } from "next/navigation";
 interface AnalyticsPost {
   id: string; hook: string; caption: string; thumbnailUrl?: string;
   mediaType: string; likes: number; comments: number; saves: number;
-  shares: number; reach: number; engagement: number; engagementRate: number; timestamp: string;
+  shares: number; views: number; reach: number; engagement: number; engagementRate: number; timestamp: string;
 }
 interface AIInsights {
   topPatterns: string[]; bestHooks: { hook: string; why: string; engagementRate: string }[];
@@ -278,16 +278,17 @@ export default function ClientDetailPage() {
                               {p.mediaType === "CAROUSEL_ALBUM" && <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">⊞ Slide</div>}
                             </div>
                             {/* Stats row — always visible */}
-                            <div className="px-2.5 py-2 grid grid-cols-4 gap-1 border-t border-white/5">
+                            <div className="px-2 py-2 grid grid-cols-5 gap-0.5 border-t border-white/5">
                               {[
-                                { icon: "❤️", val: p.likes },
-                                { icon: "💬", val: p.comments },
-                                { icon: "🔖", val: p.saves },
-                                { icon: "↗️", val: p.shares },
+                                { label: "Likes", val: p.likes },
+                                { label: "Comm.", val: p.comments },
+                                { label: "Saves", val: p.saves },
+                                { label: "Shares", val: p.shares },
+                                { label: "Views", val: p.views },
                               ].map(s => (
-                                <div key={s.icon} className="text-center">
-                                  <p className="text-[10px] text-white/30">{s.icon}</p>
-                                  <p className="text-xs font-semibold text-white">{s.val >= 1000 ? `${(s.val/1000).toFixed(1)}k` : s.val}</p>
+                                <div key={s.label} className="text-center py-1">
+                                  <p className="text-[9px] text-white/30 uppercase tracking-wide">{s.label}</p>
+                                  <p className="text-xs font-bold text-white mt-0.5">{s.val >= 1000 ? `${(s.val/1000).toFixed(1)}k` : s.val || "—"}</p>
                                 </div>
                               ))}
                             </div>
@@ -313,6 +314,7 @@ export default function ClientDetailPage() {
                               { icon: "💬", label: "Comments", val: selectedPost.comments },
                               { icon: "🔖", label: "Saves", val: selectedPost.saves },
                               { icon: "↗️", label: "Shares", val: selectedPost.shares },
+                              { icon: "▶️", label: "Views", val: selectedPost.views },
                               { icon: "👁️", label: "Reach", val: selectedPost.reach },
                             ].map(s => (
                               <div key={s.label} className="bg-white/5 rounded-xl px-3 py-2 text-center min-w-[56px]">

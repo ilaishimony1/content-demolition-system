@@ -75,8 +75,13 @@ export async function GET(req: NextRequest) {
     const postsWithInsights = await Promise.all(
       posts.slice(0, 25).map(async (post: Record<string, unknown>) => {
         try {
+          // Different metrics for video vs non-video
+          const isVideo = post.media_type === "VIDEO";
+          const metricList = isVideo
+            ? "impressions,reach,saved,shares,plays,total_interactions"
+            : "impressions,reach,saved,shares,total_interactions";
           const insightRes = await fetch(
-            `https://graph.instagram.com/v19.0/${post.id}/insights?metric=impressions,reach,saved,shares&access_token=${token}`
+            `https://graph.instagram.com/v19.0/${post.id}/insights?metric=${metricList}&access_token=${token}`
           );
           const insightData = await insightRes.json();
           const metrics: Record<string, number> = {};
@@ -89,6 +94,7 @@ export async function GET(req: NextRequest) {
           const comments = (post.comments_count as number) || 0;
           const saves = metrics.saved || 0;
           const shares = metrics.shares || 0;
+          const views = metrics.plays || 0;
           const reach = metrics.reach || 1;
           const engagement = likes + comments + saves + shares;
           const engagementRate = ((engagement / reach) * 100).toFixed(2);
@@ -106,6 +112,7 @@ export async function GET(req: NextRequest) {
             comments,
             saves,
             shares,
+            views,
             reach: metrics.reach || 0,
             impressions: metrics.impressions || 0,
             engagement,

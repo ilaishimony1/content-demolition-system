@@ -78,10 +78,10 @@ export async function GET(req: NextRequest) {
           // Different metrics for video vs non-video
           const isVideo = post.media_type === "VIDEO";
           const metricList = isVideo
-            ? "impressions,reach,saved,shares,plays,total_interactions"
-            : "impressions,reach,saved,shares,total_interactions";
+            ? "impressions,reach,saved,shares,plays"
+            : "impressions,reach,saved,shares";
           const insightRes = await fetch(
-            `https://graph.instagram.com/v19.0/${post.id}/insights?metric=${metricList}&access_token=${token}`
+            `https://graph.instagram.com/v19.0/${post.id}/insights?metric=${metricList}&period=lifetime&access_token=${token}`
           );
           const insightData = await insightRes.json();
           const metrics: Record<string, number> = {};
@@ -90,6 +90,8 @@ export async function GET(req: NextRequest) {
               metrics[m.name] = m.values?.[0]?.value ?? m.value ?? 0;
             }
           }
+          // Log first post's raw response for debugging
+          if (!post.id) console.log("Insights raw:", JSON.stringify(insightData).slice(0, 500));
           const likes = (post.like_count as number) || 0;
           const comments = (post.comments_count as number) || 0;
           const saves = metrics.saved || 0;

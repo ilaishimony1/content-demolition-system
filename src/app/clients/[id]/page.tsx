@@ -260,21 +260,37 @@ export default function ClientDetailPage() {
                   {postsLoading ? (
                     <div className="text-center py-16 text-white/30 text-sm animate-pulse">Loading feed...</div>
                   ) : (
-                    <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                       {posts.map((p, i) => {
                         const isTop20 = i < Math.ceil(posts.length * 0.2);
                         return (
-                          <button key={p.id} onClick={() => setSelectedPost(p)}
-                            className={`relative aspect-square rounded-xl overflow-hidden bg-[#111118] border transition-all hover:scale-[1.02] ${selectedPost?.id===p.id ? "border-orange-500" : isTop20 ? "border-yellow-500/40 hover:border-yellow-500/70" : "border-white/10 hover:border-orange-500/50"}`}>
-                            {p.thumbnailUrl
-                              ? <img src={p.thumbnailUrl} alt="" className="w-full h-full object-cover" />
-                              : <div className="w-full h-full flex items-center justify-center text-2xl">{p.mediaType==="VIDEO"?"🎬":p.mediaType==="CAROUSEL_ALBUM"?"🖼️":"📸"}</div>
-                            }
-                            {/* Badges */}
-                            {i === 0 && <div className="absolute top-1.5 left-1.5 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">#1</div>}
-                            {isTop20 && i > 0 && <div className="absolute top-1.5 left-1.5 text-sm">🔥</div>}
-                            {p.mediaType === "VIDEO" && <div className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] px-1 py-0.5 rounded">▶</div>}
-                            {p.mediaType === "CAROUSEL_ALBUM" && <div className="absolute top-1.5 right-1.5 bg-black/50 text-white text-[10px] px-1 py-0.5 rounded">⊞</div>}
+                          <button key={p.id} onClick={() => setSelectedPost(selectedPost?.id === p.id ? null : p)}
+                            className={`rounded-xl overflow-hidden bg-[#111118] border transition-all hover:scale-[1.01] text-left ${selectedPost?.id===p.id ? "border-orange-500" : isTop20 ? "border-yellow-500/40 hover:border-yellow-400/60" : "border-white/10 hover:border-white/20"}`}>
+                            {/* Thumbnail */}
+                            <div className="relative aspect-[4/5]">
+                              {p.thumbnailUrl
+                                ? <img src={p.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                                : <div className="w-full h-full flex items-center justify-center text-3xl bg-white/5">{p.mediaType==="VIDEO"?"🎬":p.mediaType==="CAROUSEL_ALBUM"?"🖼️":"📸"}</div>
+                              }
+                              {i === 0 && <div className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">#1</div>}
+                              {isTop20 && i > 0 && <div className="absolute top-2 left-2 text-base leading-none">🔥</div>}
+                              {p.mediaType === "VIDEO" && <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">▶ Reel</div>}
+                              {p.mediaType === "CAROUSEL_ALBUM" && <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">⊞ Slide</div>}
+                            </div>
+                            {/* Stats row — always visible */}
+                            <div className="px-2.5 py-2 grid grid-cols-4 gap-1 border-t border-white/5">
+                              {[
+                                { icon: "❤️", val: p.likes },
+                                { icon: "💬", val: p.comments },
+                                { icon: "🔖", val: p.saves },
+                                { icon: "↗️", val: p.shares },
+                              ].map(s => (
+                                <div key={s.icon} className="text-center">
+                                  <p className="text-[10px] text-white/30">{s.icon}</p>
+                                  <p className="text-xs font-semibold text-white">{s.val >= 1000 ? `${(s.val/1000).toFixed(1)}k` : s.val}</p>
+                                </div>
+                              ))}
+                            </div>
                           </button>
                         );
                       })}

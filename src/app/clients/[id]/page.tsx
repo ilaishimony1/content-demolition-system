@@ -58,6 +58,7 @@ export default function ClientDetailPage() {
   const [freePrompt, setFreePrompt] = useState("");
   const [freeAnswer, setFreeAnswer] = useState("");
   const [freeLoading, setFreeLoading] = useState(false);
+  const [videoAnalyses, setVideoAnalyses] = useState<Record<string, { loading?: boolean; error?: string; data?: Record<string, unknown> }>>({});
 
   async function loadAnalytics() {
     if (!client?.clientId) return;
@@ -82,6 +83,23 @@ export default function ClientDetailPage() {
     if (data.freeAnswer) setFreeAnswer(data.freeAnswer);
     else if (data.error) setFreeAnswer(`Error: ${data.error}`);
     setFreeLoading(false);
+  }
+
+  async function analyseVideo(post: AnalyticsPost) {
+    if (!client?.clientId) return;
+    setVideoAnalyses(prev => ({ ...prev, [post.id]: { loading: true } }));
+    try {
+      const res = await fetch("/api/instagram/analyse-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id, clientId: client.clientId, caption: post.caption }),
+      });
+      const data = await res.json();
+      if (data.error) setVideoAnalyses(prev => ({ ...prev, [post.id]: { error: data.error } }));
+      else setVideoAnalyses(prev => ({ ...prev, [post.id]: { data: data.analysis } }));
+    } catch (e) {
+      setVideoAnalyses(prev => ({ ...prev, [post.id]: { error: String(e) } }));
+    }
   }
 
   async function loadClient() {
@@ -316,19 +334,50 @@ export default function ClientDetailPage() {
                       <div>
                         <p className="text-xs text-white/40 mb-3">All posts ranked by {sortBy}</p>
                         <div className="space-y-2">
-                          {analytics.posts.map((p,i) => (
-                            <div key={p.id} className={`flex gap-3 items-center bg-[#111118] border rounded-xl p-3 ${i===0?"border-orange-500/40":"border-white/10"}`}>
-                              <span className={`text-xs font-bold w-5 ${i===0?"text-orange-400":"text-white/30"}`}>#{i+1}</span>
-                              {p.thumbnailUrl && <img src={p.thumbnailUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs text-white/70 truncate">{p.hook||"No caption"}</p>
-                                <div className="flex gap-2 text-xs text-white/30 mt-0.5">
-                                  <span>❤️{p.likes}</span><span>💬{p.comments}</span><span>🔖{p.saves}</span>
+                          {analytics.posts.map((p,i) => {
+                            const va = videoAnalyses[p.id];
+                            return (
+                              <div key={p.id} className={`bg-[#111118] border rounded-xl p-3 ${i===0?"border-orange-500/40":"border-white/10"}`}>
+                                <div className="flex gap-3 items-center">
+                                  <span className={`text-xs font-bold w-5 ${i===0?"text-orange-400":"text-white/30"}`}>#{i+1}</span>
+                                  {p.thumbnailUrl && <img src={p.thumbnailUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-white/70 truncate">{p.hook||"No caption"}</p>
+                                    <div className="flex gap-2 text-xs text-white/30 mt-0.5">
+                                      <span>❤️{p.likes}</span><span>💬{p.comments}</span><span>🔖{p.saves}</span>
+                                    </div>
+                                  </div>
+                                  <span className={`text-sm font-bold ${p.engagementRate>parseFloat(analytics.avgEngagementRate)?"text-green-400":"text-white/40"}`}>{p.engagementRate}%</span>
+                                  {p.mediaType === "VIDEO" && !va?.data && (
+                                    <button
+                                      onClick={() => analyseVideo(p)}
+                                      disabled={va?.loading}
+                                      className="ml-1 text-xs bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 px-2 py-1 rounded-lg transition-all disabled:opacity-50 whitespace-nowrap"
+                                    >
+                                      {va?.loading ? "..." : "🎬 Analyse"}
+                                    </button>
+                                  )}
                                 </div>
+                                {va?.error && <p className="text-xs text-red-400 mt-2 pl-8">{va.error}</p>}
+                                {va?.data && (
+                                  <div className="mt-2 ml-8 grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    {[
+                                      { l: "Type", v: String(va.data.content_type || "—") },
+                                      { l: "Energy", v: String(va.data.energy_level || "—") },
+                                      { l: "Hook Quality", v: `${va.data.hook_quality || "—"}/10` },
+                                      { l: "Usability", v: `${va.data.usability_score || "—"}/10` },
+                                    ].map(s => (
+                                      <div key={s.l} className="bg-white/5 rounded-lg px-2 py-1.5 text-center">
+                                        <p className="text-xs text-white/40">{s.l}</p>
+                                        <p className="text-xs font-semibold text-white capitalize">{s.v}</p>
+                                      </div>
+                                    ))}
+                                    {va.data.notes ? <p className="col-span-2 md:col-span-4 text-xs text-white/50 italic">{String(va.data.notes)}</p> : null}
+                                  </div>
+                                )}
                               </div>
-                              <span className={`text-sm font-bold ${p.engagementRate>parseFloat(analytics.avgEngagementRate)?"text-green-400":"text-white/40"}`}>{p.engagementRate}%</span>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                       <button onClick={() => setAnalytics(null)} className="w-full bg-white/5 hover:bg-white/10 text-white/40 py-2.5 rounded-xl text-sm">🔄 New Analysis</button>

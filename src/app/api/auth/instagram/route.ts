@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Facebook Login flow — gives access to Instagram Business insights
+// Instagram Business Login — proper scopes including insights
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("clientId");
   if (!clientId) return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
@@ -11,15 +11,14 @@ export async function GET(req: NextRequest) {
   const state = Buffer.from(JSON.stringify({ clientId, returnTo })).toString("base64");
 
   const scopes = [
-    "pages_show_list",
-    "instagram_basic",
-    "instagram_manage_insights",
-    "instagram_content_publish",
-    "instagram_manage_comments",
-    "instagram_manage_messages",
+    "instagram_business_basic",
+    "instagram_business_manage_insights",
+    "instagram_business_manage_comments",
+    "instagram_business_manage_messages",
+    "instagram_business_content_publish",
   ].join(",");
 
-  const url = new URL("https://www.facebook.com/dialog/oauth");
+  const url = new URL("https://api.instagram.com/oauth/authorize");
   url.searchParams.set("client_id", appId);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("scope", scopes);

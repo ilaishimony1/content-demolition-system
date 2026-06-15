@@ -66,62 +66,40 @@ export async function GET(req: NextRequest) {
   const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
 
   try {
-    // 1. Exchange code for short-lived Facebook User Token
-    const tokenRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&redirect_uri=${encodeURIComponent(redirectUri)}&code=${code}`
-    );
+    // 1. Exchange code for short-lived Instagram token
+    const formData = new URLSearchParams();
+    formData.append("client_id", appId);
+    formData.append("client_secret", appSecret);
+    formData.append("grant_type", "authorization_code");
+    formData.append("redirect_uri", redirectUri);
+    formData.append("code", code);
+
+    const tokenRes = await fetch("https://api.instagram.com/oauth/access_token", {
+      method: "POST",
+      body: formData,
+    });
     const tokenData = await tokenRes.json();
+
     if (!tokenData.access_token) {
-      console.error("FB token exchange failed:", tokenData);
+      console.error("Token exchange failed:", tokenData);
       return NextResponse.redirect(`${baseUrl}/${earlyReturnTo}?error=token_failed`);
     }
 
+    const shortToken = tokenData.access_token;
+    const igUserId = tokenData.user_id;
+
     // 2. Exchange for long-lived token (60 days)
     const longRes = await fetch(
-      `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`
+      `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`
     );
     const longData = await longRes.json();
-    const accessToken = longData.access_token || tokenData.access_token;
+    const accessToken = longData.access_token || shortToken;
 
-    // 3. Get Facebook Pages → find connected Instagram Business Account
-    const pagesRes = await fetch(
-      `https://graph.facebook.com/v19.0/me/accounts?access_token=${accessToken}`
+    // 3. Get Instagram profile
+    const profileRes = await fetch(
+      `https://graph.instagram.com/v19.0/me?fields=username,followers_count,profile_picture_url&access_token=${accessToken}`
     );
-    const pagesData = await pagesRes.json();
-    const pages = pagesData.data || [];
-
-    let igAccountId: string | null = null;
-    let igUsername: string | null = null;
-    let igFollowers: string | null = null;
-    let igProfilePhoto: string | null = null;
-
-    for (const page of pages) {
-      const igRes = await fetch(
-        `https://graph.facebook.com/v19.0/${page.id}?fields=instagram_business_account&access_token=${accessToken}`
-      );
-      const igData = await igRes.json();
-      if (igData.instagram_business_account?.id) {
-        igAccountId = igData.instagram_business_account.id;
-
-        // Get IG profile details
-        const profileRes = await fetch(
-          `https://graph.facebook.com/v19.0/${igAccountId}?fields=username,followers_count,profile_picture_url&access_token=${accessToken}`
-        );
-        const profile = await profileRes.json();
-        igUsername = profile.username || null;
-        igFollowers = profile.followers_count ? `${(profile.followers_count / 1000).toFixed(1)}K` : null;
-        igProfilePhoto = profile.profile_picture_url || null;
-        break;
-      }
-    }
-
-    // Fallback: if no page/IG found, try getting basic FB user info
-    if (!igAccountId) {
-      const meRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=name&access_token=${accessToken}`);
-      const meData = await meRes.json();
-      console.error("No Instagram Business Account found for FB user:", meData);
-      return NextResponse.redirect(`${baseUrl}/${earlyReturnTo}?error=no_ig_business_account`);
-    }
+    const profile = await profileRes.json();
 
     // 4. Save to Firestore
     const queryResult = await firestoreQuery("users", "clientId", clientId);
@@ -132,10 +110,10 @@ export async function GET(req: NextRequest) {
       await firestoreUpdate(`users/${docId}`, {
         instagramConnected: true,
         instagramAccessToken: accessToken,
-        instagramAccountId: igAccountId,
-        instagramUsername: igUsername,
-        followers: igFollowers,
-        profilePhoto: igProfilePhoto,
+        instagramAccountId: String(igUserId),
+        instagramUsername: profile.username || null,
+        followers: profile.followers_count ? `${(profile.followers_count / 1000).toFixed(1)}K` : null,
+        profilePhoto: profile.profile_picture_url || null,
         instagramConnectedAt: new Date().toISOString(),
       });
     }

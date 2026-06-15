@@ -161,10 +161,17 @@ export default function LibraryPage() {
       });
       const data = await res.json();
       if (data.error) {
-        setAiScanStatus("Error: " + data.error);
+        setAiScanStatus("❌ Error: " + data.error);
       } else {
-        setAiScanStatus(`✅ Analysed ${data.analysed ?? 0} clips`);
-        await loadClips(); // Refresh to show AI tags
+        const { analysed = 0, errors = 0, skipped = 0 } = data;
+        if (analysed === 0 && !session?.accessToken) {
+          setAiScanStatus("⚠️ Not connected to Google — click 'Import from Drive' to sign in first, then scan again");
+        } else if (analysed === 0) {
+          setAiScanStatus(`⚠️ 0 analysed — ${errors} errors, ${skipped} skipped (no video URL). Check Railway logs.`);
+        } else {
+          setAiScanStatus(`✅ Analysed ${analysed} clips! ${errors > 0 ? `(${errors} failed)` : ""}`);
+          await loadClips();
+        }
       }
     } catch (err) {
       setAiScanStatus("Scan failed: " + String(err));

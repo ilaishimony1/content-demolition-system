@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { saveClip, batchSaveClips, getClipsByClient, Clip } from "@/lib/clips";
+import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -164,11 +165,15 @@ export default function LibraryPage() {
     setAiScanning(true);
     setAiScanStatus("Starting AI scan...");
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min max
       const res = await fetch("/api/agent/scan-drive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: selectedClient, accessToken: session?.accessToken }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       const data = await res.json();
       if (data.error) {
         setAiScanStatus("❌ Error: " + data.error);
@@ -181,6 +186,17 @@ export default function LibraryPage() {
         } else {
           setAiScanStatus(`✅ Analysed ${analysed} clips! ${errors > 0 ? `(${errors} failed)` : ""}`);
           await loadClips();
+          // Write to agent memory so other agents know what was scanned
+          const totalAnalysed = clips.filter(c => c.aiAnalysedAt).length + analysed;
+          await updateAgentMemory(selectedClient, {
+            lastScanAt: new Date().toISOString(),
+            totalAnalysed,
+          });
+          await logAgentEvent(selectedClient, {
+            agent: "drive-scanner",
+            type: "scan-complete",
+            payload: { analysed, errors, skipped, totalAnalysed },
+          });
         }
       }
     } catch (err) {
@@ -395,8 +411,9 @@ export default function LibraryPage() {
           {/* AI Scan Status */}
           {(aiScanning || aiScanStatus) && (
             <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex items-center gap-3">
-              {aiScanning && <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />}
-              <p className="text-sm text-purple-300">{aiScanStatus || "Scanning clips with AI..."}</p>
+              {aiScanning && <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+              <p className="text-sm text-purple-300 flex-1">{aiScanStatus || "Scanning clips with AI..."}</p>
+              <button onClick={() => { setAiScanning(false); setAiScanStatus(""); }} className="text-white/30 hover:text-white text-lg leading-none">✕</button>
             </div>
           )}
 

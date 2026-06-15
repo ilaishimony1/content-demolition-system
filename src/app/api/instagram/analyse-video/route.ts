@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
 
   // Fetch the video URL from Instagram
   const mediaRes = await fetch(
-    `https://graph.instagram.com/v19.0/${postId}?fields=media_url,media_type&access_token=${creds.token}`
+    `https://graph.facebook.com/v19.0/${postId}?fields=media_url,media_type&access_token=${creds.token}`
   );
   const mediaData = await mediaRes.json();
   if (mediaData.error) return NextResponse.json({ error: mediaData.error.message }, { status: 400 });

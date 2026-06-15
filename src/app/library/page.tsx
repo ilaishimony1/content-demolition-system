@@ -151,6 +151,14 @@ export default function LibraryPage() {
 
   async function handleAIScan() {
     if (!selectedClient || aiScanning) return;
+
+    // Auto-prompt Google sign-in if no token
+    if (!session?.accessToken) {
+      setAiScanStatus("🔑 Connecting to Google Drive...");
+      await signIn("google");
+      return;
+    }
+
     setAiScanning(true);
     setAiScanStatus("Starting AI scan...");
     try {

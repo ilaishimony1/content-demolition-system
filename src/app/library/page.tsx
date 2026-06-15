@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { saveClip, batchSaveClips, getClipsByClient, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
+import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy, TaxonomyCategory } from "@/lib/taxonomy";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -33,6 +34,11 @@ export default function LibraryPage() {
   const [syncing, setSyncing] = useState(false);
   const [libraryView, setLibraryView] = useState<"drive" | "ai">("drive");
   const [selectedAiCategory, setSelectedAiCategory] = useState<string | null>(null);
+  const [taxonomy, setTaxonomy] = useState<ClientTaxonomy | null>(null);
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatName, setEditingCatName] = useState("");
+  const [addingSubTo, setAddingSubTo] = useState<string | null>(null);
+  const [newSubName, setNewSubName] = useState("");
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -54,8 +60,14 @@ export default function LibraryPage() {
       setTimeout(() => setSelectedDriveFolder(null), 0);
       loadClips();
       loadAllCounts();
+      loadTaxonomy();
     }
   }, [selectedClient, user]);
+
+  async function loadTaxonomy() {
+    const existing = await getTaxonomy(selectedClient);
+    setTaxonomy(existing);
+  }
 
   async function loadClips() {
     const data = await getClipsByClient(selectedClient);
@@ -152,6 +164,63 @@ export default function LibraryPage() {
     }
   }
 
+  // Ensure taxonomy exists (auto-create from current AI labels if needed)
+  function ensureTaxonomy(aiLabels: string[]): ClientTaxonomy {
+    if (taxonomy) return taxonomy;
+    return buildDefaultTaxonomy(selectedClient, aiLabels);
+  }
+
+  async function renameCat(catId: string, newName: string) {
+    const aiLabels = analysedClips.map(c => c.aiContentType).filter(Boolean) as string[];
+    const tax = ensureTaxonomy([...new Set(aiLabels)]);
+    const updated: ClientTaxonomy = {
+      ...tax,
+      categories: tax.categories.map(c =>
+        c.id === catId ? { ...c, name: newName } : c
+      ),
+    };
+    // If this category didn't exist yet, add it
+    if (!updated.categories.find(c => c.id === catId)) {
+      updated.categories.push({ id: catId, name: newName, emoji: "📹", subcategories: [] });
+    }
+    await saveTaxonomy(updated);
+    setTaxonomy(updated);
+    setEditingCatId(null);
+  }
+
+  async function addSubcategory(catId: string, subName: string) {
+    if (!subName.trim()) return;
+    const aiLabels = analysedClips.map(c => c.aiContentType).filter(Boolean) as string[];
+    const tax = ensureTaxonomy([...new Set(aiLabels)]);
+    const subId = `${catId}-${subName.toLowerCase().replace(/\s+/g, "-")}`;
+    const updated: ClientTaxonomy = {
+      ...tax,
+      categories: tax.categories.map(c =>
+        c.id === catId
+          ? { ...c, subcategories: [...c.subcategories, { id: subId, name: subName, keywords: [] }] }
+          : c
+      ),
+    };
+    await saveTaxonomy(updated);
+    setTaxonomy(updated);
+    setAddingSubTo(null);
+    setNewSubName("");
+  }
+
+  async function removeSubcategory(catId: string, subId: string) {
+    if (!taxonomy) return;
+    const updated: ClientTaxonomy = {
+      ...taxonomy,
+      categories: taxonomy.categories.map(c =>
+        c.id === catId
+          ? { ...c, subcategories: c.subcategories.filter(s => s.id !== subId) }
+          : c
+      ),
+    };
+    await saveTaxonomy(updated);
+    setTaxonomy(updated);
+  }
+
   async function handleAIScan() {
     if (!selectedClient || aiScanning) return;
 
@@ -170,7 +239,7 @@ export default function LibraryPage() {
       const res = await fetch("/api/agent/scan-drive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: selectedClient, accessToken: session?.accessToken }),
+        body: JSON.stringify({ clientId: selectedClient, accessToken: session?.accessToken, taxonomy }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -247,6 +316,15 @@ export default function LibraryPage() {
       if (selectedAiCategory === "energy:high") return clip.aiEnergyLevel === "high" && matchesSearch;
       if (selectedAiCategory === "energy:low") return clip.aiEnergyLevel === "low" && matchesSearch;
       if (selectedAiCategory === "score:top") return parseFloat(clip.aiUsabilityScore || "0") >= 8 && matchesSearch;
+      // Subcategory filter — match by keyword hints in clip topic/notes
+      if (selectedAiCategory.startsWith("sub:")) {
+        const subId = selectedAiCategory.slice(4);
+        const allSubs = taxonomy?.categories.flatMap(c => c.subcategories) || [];
+        const sub = allSubs.find(s => s.id === subId);
+        if (!sub) return matchesSearch;
+        const clipText = `${clip.aiTopic || ""} ${clip.aiNotes || ""} ${clip.aiContentType || ""}`.toLowerCase();
+        return sub.keywords.some(kw => clipText.includes(kw.toLowerCase())) || clipText.includes(sub.name.toLowerCase()) && matchesSearch;
+      }
       return matchesSearch;
     }
 
@@ -358,7 +436,17 @@ export default function LibraryPage() {
               <span>📁</span> Original Drive
             </button>
             <button
-              onClick={() => { setLibraryView("ai"); setSelectedAiCategory("all"); }}
+              onClick={async () => {
+                setLibraryView("ai");
+                setSelectedAiCategory("all");
+                // Auto-create taxonomy from AI labels if none exists yet
+                if (!taxonomy && analysedClips.length > 0) {
+                  const labels = [...new Set(analysedClips.map(c => c.aiContentType).filter(Boolean))] as string[];
+                  const defaultTax = buildDefaultTaxonomy(selectedClient, labels);
+                  await saveTaxonomy(defaultTax);
+                  setTaxonomy(defaultTax);
+                }
+              }}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 libraryView === "ai" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-white/40 hover:text-white"
               }`}
@@ -474,26 +562,134 @@ export default function LibraryPage() {
             )}
 
             {libraryView === "ai" && (
-              <div className="w-56 shrink-0">
-                <p className="text-xs text-purple-400/60 font-medium uppercase tracking-wider mb-2">AI Categories</p>
+              <div className="w-64 shrink-0">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-purple-400/60 font-medium uppercase tracking-wider">AI Categories</p>
+                  <span className="text-xs text-white/20">click name to rename</span>
+                </div>
                 {analysedClips.length === 0 ? (
                   <div className="text-xs text-white/30 p-3 bg-white/5 rounded-lg">
                     No clips analysed yet — click <span className="text-purple-300">Scan with AI</span> first
                   </div>
                 ) : (
-                  <div className="space-y-0.5">
-                    {aiCategories.map(cat => (
-                      <button
-                        key={cat.id}
-                        onClick={() => setSelectedAiCategory(cat.id)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between ${
-                          selectedAiCategory === cat.id ? "bg-purple-500/20 text-purple-300" : "text-white/50 hover:bg-white/5 hover:text-white"
-                        }`}
-                      >
-                        <span className="flex items-center gap-2"><span>{cat.emoji}</span> {cat.label}</span>
-                        <span className="text-white/30">{cat.count}</span>
-                      </button>
-                    ))}
+                  <div className="space-y-1">
+                    {/* All analysed */}
+                    <button
+                      onClick={() => setSelectedAiCategory("all")}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between ${
+                        selectedAiCategory === "all" ? "bg-purple-500/20 text-purple-300" : "text-white/50 hover:bg-white/5 hover:text-white"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">🤖 All analysed</span>
+                      <span className="text-white/30">{analysedClips.length}</span>
+                    </button>
+
+                    {/* AI content-type categories — editable */}
+                    {aiCategories.filter(c => c.id.startsWith("type:")).map(cat => {
+                      const rawId = cat.id.slice(5); // e.g. "action_reel"
+                      const taxCat = taxonomy?.categories.find(c => c.id === rawId);
+                      const displayName = taxCat?.name || cat.label;
+                      const isEditing = editingCatId === rawId;
+                      const isSelected = selectedAiCategory === cat.id;
+
+                      return (
+                        <div key={cat.id} className="group">
+                          <div className={`flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all ${isSelected ? "bg-purple-500/20" : "hover:bg-white/5"}`}>
+                            {/* Category row */}
+                            {isEditing ? (
+                              <input
+                                autoFocus
+                                value={editingCatName}
+                                onChange={e => setEditingCatName(e.target.value)}
+                                onBlur={() => renameCat(rawId, editingCatName || displayName)}
+                                onKeyDown={e => {
+                                  if (e.key === "Enter") renameCat(rawId, editingCatName || displayName);
+                                  if (e.key === "Escape") setEditingCatId(null);
+                                }}
+                                className="flex-1 bg-purple-500/20 text-purple-300 text-xs px-2 py-0.5 rounded outline-none border border-purple-500/40 min-w-0"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => setSelectedAiCategory(cat.id)}
+                                onDoubleClick={() => { setEditingCatId(rawId); setEditingCatName(displayName); }}
+                                className={`flex-1 text-left text-xs flex items-center gap-1.5 min-w-0 ${isSelected ? "text-purple-300" : "text-white/60 hover:text-white"}`}
+                              >
+                                <span>{cat.emoji}</span>
+                                <span className="truncate">{displayName}</span>
+                              </button>
+                            )}
+                            <span className="text-white/20 text-xs shrink-0">{cat.count}</span>
+                            {/* Edit + Add sub buttons */}
+                            <button
+                              onClick={() => { setEditingCatId(rawId); setEditingCatName(displayName); }}
+                              className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-purple-300 text-xs transition-all px-0.5"
+                              title="Rename"
+                            >✏️</button>
+                            <button
+                              onClick={() => { setAddingSubTo(rawId); setNewSubName(""); }}
+                              className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-green-400 text-xs transition-all px-0.5"
+                              title="Add subcategory"
+                            >+</button>
+                          </div>
+
+                          {/* Subcategories */}
+                          {taxCat?.subcategories.map(sub => (
+                            <div key={sub.id} className="group/sub flex items-center gap-1 pl-6 pr-2 py-1 rounded-lg hover:bg-white/5 transition-all">
+                              <button
+                                onClick={() => setSelectedAiCategory(`sub:${sub.id}`)}
+                                className={`flex-1 text-left text-xs truncate ${selectedAiCategory === `sub:${sub.id}` ? "text-purple-300" : "text-white/40 hover:text-white"}`}
+                              >
+                                └ {sub.name}
+                              </button>
+                              <button
+                                onClick={() => removeSubcategory(rawId, sub.id)}
+                                className="opacity-0 group-hover/sub:opacity-100 text-white/20 hover:text-red-400 text-xs"
+                              >✕</button>
+                            </div>
+                          ))}
+
+                          {/* Add subcategory input */}
+                          {addingSubTo === rawId && (
+                            <div className="pl-6 pr-2 py-1">
+                              <input
+                                autoFocus
+                                value={newSubName}
+                                onChange={e => setNewSubName(e.target.value)}
+                                onBlur={() => { if (newSubName.trim()) addSubcategory(rawId, newSubName); else setAddingSubTo(null); }}
+                                onKeyDown={e => {
+                                  if (e.key === "Enter") addSubcategory(rawId, newSubName);
+                                  if (e.key === "Escape") setAddingSubTo(null);
+                                }}
+                                placeholder="Subcategory name..."
+                                className="w-full bg-white/5 border border-white/10 rounded text-xs px-2 py-1 text-white placeholder:text-white/20 outline-none focus:border-purple-500/40"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* Fixed filters */}
+                    <div className="border-t border-white/5 pt-1 mt-1 space-y-0.5">
+                      {[
+                        { id: "face:yes", label: "Has face", emoji: "👤" },
+                        { id: "energy:high", label: "High energy", emoji: "🔥" },
+                        { id: "energy:low", label: "Calm / low", emoji: "🌊" },
+                        { id: "score:top", label: "Top rated (8+)", emoji: "⭐" },
+                      ].map(f => {
+                        const count = aiCategories.find(c => c.id === f.id)?.count || 0;
+                        if (!count) return null;
+                        return (
+                          <button key={f.id} onClick={() => setSelectedAiCategory(f.id)}
+                            className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-between ${
+                              selectedAiCategory === f.id ? "bg-purple-500/20 text-purple-300" : "text-white/40 hover:bg-white/5 hover:text-white"
+                            }`}>
+                            <span>{f.emoji} {f.label}</span>
+                            <span className="text-white/20">{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

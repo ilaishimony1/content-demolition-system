@@ -30,6 +30,8 @@ export default function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
+  const [libraryView, setLibraryView] = useState<"drive" | "ai">("drive");
+  const [selectedAiCategory, setSelectedAiCategory] = useState<string | null>(null);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -197,13 +199,41 @@ export default function LibraryPage() {
     new Set(clips.map(c => (c as Clip & { path?: string }).path || "").filter(Boolean))
   ).sort();
 
+  // AI categories derived from analysed clips
+  const analysedClips = clips.filter(c => c.aiAnalysedAt);
+  const aiCategories = [
+    { id: "all", label: "All analysed", emoji: "🤖", count: analysedClips.length },
+    ...Array.from(new Set(analysedClips.map(c => c.aiContentType).filter(Boolean))).map(ct => ({
+      id: `type:${ct}`, label: ct!, emoji: ct === "talking-head" ? "🗣️" : ct === "b-roll" ? "🎬" : ct === "transition" ? "⚡" : "📹",
+      count: analysedClips.filter(c => c.aiContentType === ct).length,
+    })),
+    { id: "face:yes", label: "Has face", emoji: "👤", count: analysedClips.filter(c => c.aiHasFace === "yes" || c.aiHasFace === "True").length },
+    { id: "energy:high", label: "High energy", emoji: "🔥", count: analysedClips.filter(c => c.aiEnergyLevel === "high").length },
+    { id: "energy:low", label: "Calm / low energy", emoji: "🌊", count: analysedClips.filter(c => c.aiEnergyLevel === "low").length },
+    { id: "score:top", label: "Top rated (8+)", emoji: "★", count: analysedClips.filter(c => parseFloat(c.aiUsabilityScore || "0") >= 8).length },
+  ].filter(cat => cat.count > 0);
+
   const filteredClips = clips.filter((clip) => {
     const matchesWorkflow = selectedFolder === "all" || clip.folder === selectedFolder;
     const clipPath = (clip as Clip & { path?: string }).path || "";
     const matchesDriveFolder = !selectedDriveFolder || clipPath === selectedDriveFolder || clipPath.startsWith(selectedDriveFolder + "/");
     const matchesSearch = searchQuery === "" ||
       clip.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      clip.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+      clip.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (clip.aiContentType || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (clip.aiTopic || "").toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (libraryView === "ai") {
+      if (!clip.aiAnalysedAt) return false;
+      if (!selectedAiCategory || selectedAiCategory === "all") return matchesSearch;
+      if (selectedAiCategory.startsWith("type:")) return clip.aiContentType === selectedAiCategory.slice(5) && matchesSearch;
+      if (selectedAiCategory === "face:yes") return (clip.aiHasFace === "yes" || clip.aiHasFace === "True") && matchesSearch;
+      if (selectedAiCategory === "energy:high") return clip.aiEnergyLevel === "high" && matchesSearch;
+      if (selectedAiCategory === "energy:low") return clip.aiEnergyLevel === "low" && matchesSearch;
+      if (selectedAiCategory === "score:top") return parseFloat(clip.aiUsabilityScore || "0") >= 8 && matchesSearch;
+      return matchesSearch;
+    }
+
     return matchesWorkflow && matchesDriveFolder && matchesSearch;
   });
 
@@ -301,6 +331,29 @@ export default function LibraryPage() {
             </button>
           </div>
 
+          {/* View Toggle — Drive vs AI Library */}
+          <div className="flex items-center gap-2 bg-[#111118] border border-white/10 rounded-xl p-1 w-fit">
+            <button
+              onClick={() => setLibraryView("drive")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                libraryView === "drive" ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+              }`}
+            >
+              <span>📁</span> Original Drive
+            </button>
+            <button
+              onClick={() => { setLibraryView("ai"); setSelectedAiCategory("all"); }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                libraryView === "ai" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-white/40 hover:text-white"
+              }`}
+            >
+              <span>🤖</span> AI Library
+              {analysedClips.length > 0 && (
+                <span className="text-xs bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded-full">{analysedClips.length}</span>
+              )}
+            </button>
+          </div>
+
           {/* Folder Tabs + Search */}
           <div className="flex items-center gap-4">
             <div className="flex gap-1 bg-[#111118] border border-white/10 rounded-lg p-1">
@@ -364,8 +417,8 @@ export default function LibraryPage() {
 
           {/* Folder Browser + Clips Grid */}
           <div className="flex gap-6">
-            {/* Drive Folder Panel */}
-            {driveFolders.length > 0 && (
+            {/* Sidebar — Drive folders OR AI categories */}
+            {libraryView === "drive" && driveFolders.length > 0 && (
               <div className="w-56 shrink-0">
                 <p className="text-xs text-white/40 font-medium uppercase tracking-wider mb-2">Drive Folders</p>
                 <div className="space-y-0.5">
@@ -403,15 +456,53 @@ export default function LibraryPage() {
               </div>
             )}
 
+            {libraryView === "ai" && (
+              <div className="w-56 shrink-0">
+                <p className="text-xs text-purple-400/60 font-medium uppercase tracking-wider mb-2">AI Categories</p>
+                {analysedClips.length === 0 ? (
+                  <div className="text-xs text-white/30 p-3 bg-white/5 rounded-lg">
+                    No clips analysed yet — click <span className="text-purple-300">Scan with AI</span> first
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {aiCategories.map(cat => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setSelectedAiCategory(cat.id)}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between ${
+                          selectedAiCategory === cat.id ? "bg-purple-500/20 text-purple-300" : "text-white/50 hover:bg-white/5 hover:text-white"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2"><span>{cat.emoji}</span> {cat.label}</span>
+                        <span className="text-white/30">{cat.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           {/* Clips Grid */}
           <div className="flex-1">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-medium text-white/60">
                 {filteredClips.length} clips for <span className="text-white">{currentClient?.name}</span>
-                {selectedDriveFolder && <span className="text-orange-400"> / {selectedDriveFolder.split("/").pop()}</span>}
+                {libraryView === "drive" && selectedDriveFolder && <span className="text-orange-400"> / {selectedDriveFolder.split("/").pop()}</span>}
+                {libraryView === "ai" && selectedAiCategory && selectedAiCategory !== "all" && (
+                  <span className="text-purple-400"> · {aiCategories.find(c => c.id === selectedAiCategory)?.label}</span>
+                )}
               </h2>
+              {libraryView === "ai" && (
+                <span className="text-xs text-purple-400/60 bg-purple-500/10 px-2 py-1 rounded-lg">🤖 AI sorted by usability</span>
+              )}
             </div>
 
+            {(() => {
+              if (libraryView === "ai") {
+                filteredClips.sort((a, b) => parseFloat(b.aiUsabilityScore || "0") - parseFloat(a.aiUsabilityScore || "0"));
+              }
+              return null;
+            })()}
             {filteredClips.length === 0 ? (
               <div className="text-center py-16 text-white/30">
                 <div className="text-4xl mb-3">🎬</div>

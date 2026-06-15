@@ -157,7 +157,7 @@ export default function LibraryPage() {
       const res = await fetch("/api/agent/scan-drive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: selectedClient }),
+        body: JSON.stringify({ clientId: selectedClient, accessToken: session?.accessToken }),
       });
       const data = await res.json();
       if (data.error) {

@@ -10,12 +10,24 @@ export interface Clip {
   thumbnailUrl?: string;
   driveThumbnailUrl?: string;
   driveFileId?: string;
+  driveUrl?: string;
   status?: "drive-only" | "uploading" | "ready";
   folder: "raw" | "edited" | "approved";
   tags: string[];
   size?: string;
   duration?: string;
   createdAt?: unknown;
+  // AI analysis fields
+  aiContentType?: string;
+  aiEnergyLevel?: string;
+  aiHookQuality?: string;
+  aiUsabilityScore?: string;
+  aiTopic?: string;
+  aiSetting?: string;
+  aiHasFace?: string;
+  aiIsTalking?: string;
+  aiNotes?: string;
+  aiAnalysedAt?: string;
 }
 
 // Save a single clip to Firestore

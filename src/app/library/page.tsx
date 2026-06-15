@@ -30,6 +30,8 @@ export default function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
+  const [aiScanning, setAiScanning] = useState(false);
+  const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -147,6 +149,31 @@ export default function LibraryPage() {
     }
   }
 
+  async function handleAIScan() {
+    if (!selectedClient || aiScanning) return;
+    setAiScanning(true);
+    setAiScanStatus("Starting AI scan...");
+    try {
+      const res = await fetch("/api/agent/scan-drive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: selectedClient }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setAiScanStatus("Error: " + data.error);
+      } else {
+        setAiScanStatus(`✅ Analysed ${data.analysed ?? 0} clips`);
+        await loadClips(); // Refresh to show AI tags
+      }
+    } catch (err) {
+      setAiScanStatus("Scan failed: " + String(err));
+    } finally {
+      setAiScanning(false);
+      setTimeout(() => setAiScanStatus(""), 5000);
+    }
+  }
+
   if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;
   if (!user) return null;
 
@@ -242,6 +269,21 @@ export default function LibraryPage() {
                 </div>
               </div>
             </button>
+            <button
+              onClick={handleAIScan}
+              disabled={aiScanning || !selectedClient || clips.length === 0}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 transition-all disabled:opacity-40"
+            >
+              <span className="text-xl">🤖</span>
+              <div className="text-left">
+                <div className="text-sm font-medium text-purple-300">
+                  {aiScanning ? "Scanning..." : "Scan with AI"}
+                </div>
+                <div className="text-xs text-white/40">
+                  {clips.filter(c => !c.aiAnalysedAt).length} unanalysed clips
+                </div>
+              </div>
+            </button>
           </div>
 
           {/* Folder Tabs + Search */}
@@ -279,6 +321,14 @@ export default function LibraryPage() {
             <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex items-center gap-3">
               <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
               <p className="text-sm text-orange-300">{uploadProgress}</p>
+            </div>
+          )}
+
+          {/* AI Scan Status */}
+          {(aiScanning || aiScanStatus) && (
+            <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex items-center gap-3">
+              {aiScanning && <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />}
+              <p className="text-sm text-purple-300">{aiScanStatus || "Scanning clips with AI..."}</p>
             </div>
           )}
 
@@ -393,10 +443,20 @@ export default function LibraryPage() {
                             {tag}
                           </span>
                         ))}
-                        {clip.tags.length === 0 && (
+                        {clip.tags.length === 0 && !clip.aiAnalysedAt && (
                           <span className="text-xs text-white/20">No tags yet</span>
                         )}
                       </div>
+                      {/* AI tags */}
+                      {clip.aiAnalysedAt && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {clip.aiContentType && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300">🤖 {clip.aiContentType}</span>}
+                          {clip.aiEnergyLevel && <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">⚡ {clip.aiEnergyLevel}</span>}
+                          {clip.aiHookQuality && <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300">🎣 {clip.aiHookQuality}</span>}
+                          {clip.aiHasFace === "yes" && <span className="text-xs px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300">👤 face</span>}
+                          {clip.aiUsabilityScore && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-300">★ {clip.aiUsabilityScore}/10</span>}
+                        </div>
+                      )}
                       {clip.size && <p className="text-xs text-white/30">{clip.size}</p>}
                     </div>
                   </div>

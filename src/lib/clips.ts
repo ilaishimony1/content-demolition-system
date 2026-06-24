@@ -1,5 +1,16 @@
-import { collection, addDoc, getDocs, query, where, serverTimestamp, writeBatch, doc } from "firebase/firestore";
+import { collection, addDoc, getDocs, getDoc, setDoc, query, where, serverTimestamp, writeBatch, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+// Persist the full Drive folder structure (incl. empty folders) for a client,
+// so folders like בלאגן stay visible even when they contain no media.
+export async function saveDriveFolders(clientId: string, folders: string[]): Promise<void> {
+  await setDoc(doc(db, "driveStructure", clientId), { folders, updatedAt: serverTimestamp() });
+}
+
+export async function getDriveFolders(clientId: string): Promise<string[]> {
+  const snap = await getDoc(doc(db, "driveStructure", clientId));
+  return snap.exists() ? (snap.data().folders as string[]) || [] : [];
+}
 
 export interface SyncResult {
   added: number;
@@ -22,6 +33,7 @@ export interface Clip {
   tags: string[];
   size?: string;
   duration?: string;
+  mediaType?: "video" | "image";
   createdAt?: unknown;
   // AI analysis fields
   aiContentType?: string;

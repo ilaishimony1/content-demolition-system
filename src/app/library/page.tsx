@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { saveClip, upsertClipsByDriveId, getClipsByClient, Clip } from "@/lib/clips";
+import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildSortPlan, SortPlan } from "@/lib/sorter";
@@ -42,6 +42,7 @@ export default function LibraryPage() {
   const [newSubName, setNewSubName] = useState("");
   const [sortPlan, setSortPlan] = useState<SortPlan | null>(null);
   const [showSortPreview, setShowSortPreview] = useState(false);
+  const [storedFolders, setStoredFolders] = useState<string[]>([]);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -64,6 +65,7 @@ export default function LibraryPage() {
       loadClips();
       loadAllCounts();
       loadTaxonomy();
+      getDriveFolders(selectedClient).then(setStoredFolders);
     }
   }, [selectedClient, user]);
 
@@ -157,6 +159,11 @@ export default function LibraryPage() {
         setUploadProgress(`Syncing ${data.count} clips (matching existing)...`);
         // Upsert by Drive file ID — no duplicates, AI tags preserved
         const result = await upsertClipsByDriveId(selectedClient, data.clips);
+        // Persist the full folder structure (incl. empty folders like בלאגן)
+        if (data.folders) {
+          await saveDriveFolders(selectedClient, data.folders);
+          setStoredFolders(data.folders);
+        }
         await loadClips();
         setUploadProgress("");
         alert(`✅ Synced from Google Drive!\n\n${result.added} new · ${result.updated} re-folded · ${result.unchanged} unchanged`);
@@ -310,15 +317,15 @@ export default function LibraryPage() {
   // always show even when they only contain subfolders (not loose clips).
   const driveFolders = (() => {
     const all = new Set<string>();
-    for (const c of clips) {
-      const path = (c as Clip & { path?: string }).path || "";
-      if (!path) continue;
+    const addWithAncestors = (path: string) => {
+      if (!path) return;
       const parts = path.split("/");
-      // add this path and every ancestor: "a/b/c" -> "a", "a/b", "a/b/c"
-      for (let i = 1; i <= parts.length; i++) {
-        all.add(parts.slice(0, i).join("/"));
-      }
-    }
+      for (let i = 1; i <= parts.length; i++) all.add(parts.slice(0, i).join("/"));
+    };
+    // Folders that contain clips
+    for (const c of clips) addWithAncestors((c as Clip & { path?: string }).path || "");
+    // Plus every folder from the last Drive scan — including empty ones (בלאגן, etc.)
+    for (const f of storedFolders) addWithAncestors(f);
     return Array.from(all).sort();
   })();
 
@@ -812,6 +819,9 @@ export default function LibraryPage() {
                       }`}>{clip.folder}</span>
                       {clip.status === "drive-only" && (
                         <span className="absolute top-2 right-2 text-xs px-1.5 py-0.5 rounded bg-blue-600/80">📁 Drive</span>
+                      )}
+                      {clip.mediaType === "image" && (
+                        <span className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded bg-black/60">📷 Photo</span>
                       )}
                     </div>
 

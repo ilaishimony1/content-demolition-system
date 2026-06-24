@@ -132,6 +132,10 @@ export default function LibraryPage() {
     }
     if (!driveFolderId) return;
 
+    // Accept a full Drive URL or a bare folder ID
+    const folderMatch = driveFolderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+    const cleanFolderId = (folderMatch ? folderMatch[1] : driveFolderId).trim();
+
     setSyncing(true);
     setShowDriveModal(false);
     setUploadProgress("Scanning Google Drive folders...");
@@ -142,7 +146,7 @@ export default function LibraryPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accessToken: session.accessToken,
-          folderId: driveFolderId,
+          folderId: cleanFolderId,
           clientId: selectedClient,
         }),
       });

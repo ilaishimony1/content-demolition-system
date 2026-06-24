@@ -157,7 +157,14 @@ export default function LibraryPage() {
         setUploadProgress("");
         alert(`✅ Synced from Google Drive!\n\n${result.added} new · ${result.updated} re-folded · ${result.unchanged} unchanged`);
       } else {
-        alert("Sync failed: " + (data.error || "Unknown error"));
+        const msg = data.error || "Unknown error";
+        // Expired/invalid Google token → force a fresh login to get new tokens
+        if (/invalid authentication|access token|unauthorized|401|credential/i.test(msg)) {
+          alert("Your Google connection expired. Reconnecting — please approve access, then click Import from Drive again.");
+          await signIn("google");
+          return;
+        }
+        alert("Sync failed: " + msg);
       }
     } catch (err) {
       console.error("Sync error:", err);

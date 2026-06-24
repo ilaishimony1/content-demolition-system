@@ -306,9 +306,21 @@ export default function LibraryPage() {
   if (!user) return null;
 
   // Extract unique Drive folders from clips
-  const driveFolders = Array.from(
-    new Set(clips.map(c => (c as Clip & { path?: string }).path || "").filter(Boolean))
-  ).sort();
+  // Build the full folder tree — include every ancestor path so parent folders
+  // always show even when they only contain subfolders (not loose clips).
+  const driveFolders = (() => {
+    const all = new Set<string>();
+    for (const c of clips) {
+      const path = (c as Clip & { path?: string }).path || "";
+      if (!path) continue;
+      const parts = path.split("/");
+      // add this path and every ancestor: "a/b/c" -> "a", "a/b", "a/b/c"
+      for (let i = 1; i <= parts.length; i++) {
+        all.add(parts.slice(0, i).join("/"));
+      }
+    }
+    return Array.from(all).sort();
+  })();
 
   // AI categories derived from analysed clips
   const analysedClips = clips.filter(c => c.aiAnalysedAt);
@@ -582,16 +594,26 @@ export default function LibraryPage() {
                     }).length;
                     const depth = folder.split("/").length - 1;
                     const label = folder.split("/").pop()!;
+                    const isTop = depth === 0;
+                    const isSelected = selectedDriveFolder === folder;
                     return (
                       <button
                         key={folder}
                         onClick={() => setSelectedDriveFolder(folder === selectedDriveFolder ? null : folder)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between ${
-                          selectedDriveFolder === folder ? "bg-orange-500/20 text-orange-400" : "text-white/50 hover:bg-white/5 hover:text-white"
+                        className={`w-full text-left py-1.5 rounded-lg text-xs transition-all flex items-center justify-between ${
+                          isSelected
+                            ? "bg-orange-500/20 text-orange-400"
+                            : isTop
+                            ? "text-white/80 font-medium hover:bg-white/5"
+                            : "text-white/45 hover:bg-white/5 hover:text-white"
                         }`}
-                        style={{ paddingLeft: `${12 + depth * 12}px` }}
+                        style={{ paddingLeft: `${10 + depth * 16}px`, paddingRight: "12px" }}
                       >
-                        <span className="flex items-center gap-2 truncate"><span>📂</span> <span className="truncate">{label}</span></span>
+                        <span className="flex items-center gap-1.5 truncate">
+                          {!isTop && <span className="text-white/20">└</span>}
+                          <span>{isTop ? "📁" : "📂"}</span>
+                          <span className="truncate">{label}</span>
+                        </span>
                         <span className="text-white/30 shrink-0">{count}</span>
                       </button>
                     );

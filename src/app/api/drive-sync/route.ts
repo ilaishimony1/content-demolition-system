@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, count: clips.length, clips });
   } catch (error) {
     console.error("Drive sync error:", error);
-    return NextResponse.json({ error: "Sync failed" }, { status: 500 });
+    const detail = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: detail || "Sync failed" }, { status: 500 });
   }
 }

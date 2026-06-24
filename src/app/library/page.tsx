@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { saveClip, batchSaveClips, getClipsByClient, Clip } from "@/lib/clips";
+import { saveClip, upsertClipsByDriveId, getClipsByClient, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildSortPlan, SortPlan } from "@/lib/sorter";
@@ -150,11 +150,12 @@ export default function LibraryPage() {
       const data = await res.json();
 
       if (data.success) {
-        setUploadProgress(`Saving ${data.count} clips to library...`);
-        await batchSaveClips(data.clips);
+        setUploadProgress(`Syncing ${data.count} clips (matching existing)...`);
+        // Upsert by Drive file ID — no duplicates, AI tags preserved
+        const result = await upsertClipsByDriveId(selectedClient, data.clips);
         await loadClips();
         setUploadProgress("");
-        alert(`✅ Synced ${data.count} videos from Google Drive!`);
+        alert(`✅ Synced from Google Drive!\n\n${result.added} new · ${result.updated} re-folded · ${result.unchanged} unchanged`);
       } else {
         alert("Sync failed: " + (data.error || "Unknown error"));
       }

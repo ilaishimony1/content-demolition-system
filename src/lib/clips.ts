@@ -34,6 +34,8 @@ export interface Clip {
   size?: string;
   duration?: string;
   mediaType?: "video" | "image";
+  organizedPath?: string;   // in-app target folder (source of truth before Drive push)
+  organizedAt?: string;     // when it was placed
   createdAt?: unknown;
   // AI analysis fields
   aiContentType?: string;
@@ -69,6 +71,28 @@ export async function batchSaveClips(clips: Omit<Clip, "id" | "createdAt">[]) {
     }
     await batch.commit();
   }
+}
+
+/**
+ * Apply an in-app organization: write each clip's target folder to organizedPath.
+ * Reversible (clear with clearOrganization). Does NOT touch the real Drive path —
+ * the eventual Drive push reconciles real folders to match these.
+ */
+export async function applyOrganization(
+  placements: { clipId: string; organizedPath: string }[]
+): Promise<number> {
+  const now = new Date().toISOString();
+  const BATCH_SIZE = 400;
+  let written = 0;
+  for (let i = 0; i < placements.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    for (const p of placements.slice(i, i + BATCH_SIZE)) {
+      batch.update(doc(db, "clips", p.clipId), { organizedPath: p.organizedPath, organizedAt: now });
+      written++;
+    }
+    await batch.commit();
+  }
+  return written;
 }
 
 // Get all clips for a client

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, Clip } from "@/lib/clips";
+import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, applyOrganization, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildSortPlan, SortPlan } from "@/lib/sorter";
@@ -43,6 +43,8 @@ export default function LibraryPage() {
   const [newSubName, setNewSubName] = useState("");
   const [sortPlan, setSortPlan] = useState<SortPlan | null>(null);
   const [showSortPreview, setShowSortPreview] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [manualPlacements, setManualPlacements] = useState<Record<string, string>>({});
   const [storedFolders, setStoredFolders] = useState<string[]>([]);
   const [folderRules, setFolderRules] = useState<Record<string, FolderProtection>>({});
   const [rulesMenuFor, setRulesMenuFor] = useState<string | null>(null);
@@ -261,7 +263,36 @@ export default function LibraryPage() {
     const tax = taxonomy || buildDefaultTaxonomy(selectedClient, labels);
     const plan = buildSortPlan(analysed, tax, folderRules);
     setSortPlan(plan);
+    setManualPlacements({});
     setShowSortPreview(true);
+  }
+
+  async function handleApplyOrganization() {
+    if (!sortPlan || applying) return;
+    setApplying(true);
+    try {
+      const placements: { clipId: string; organizedPath: string }[] = [];
+      // Confident placements
+      for (const a of sortPlan.assignments) {
+        if (a.needsReview || !a.clip.id) continue;
+        const path = a.subName ? `${a.categoryName}/${a.subName}` : a.categoryName;
+        placements.push({ clipId: a.clip.id, organizedPath: path });
+      }
+      // Manually-placed review clips (operator picked a folder)
+      for (const a of sortPlan.needsReview) {
+        if (!a.clip.id) continue;
+        const chosen = manualPlacements[a.clip.id];
+        if (chosen) placements.push({ clipId: a.clip.id, organizedPath: chosen });
+      }
+      const written = await applyOrganization(placements);
+      await loadClips();
+      setShowSortPreview(false);
+      alert(`✅ Organized ${written} clips in the app.\n\nReview them in the AI Library — nothing in Drive changed yet.`);
+    } catch (err) {
+      alert("Apply failed: " + String(err));
+    } finally {
+      setApplying(false);
+    }
   }
 
   async function handleAIScan() {
@@ -854,6 +885,11 @@ export default function LibraryPage() {
 
                     <div className="p-3">
                       <p className="text-xs font-medium truncate mb-2">{clip.name}</p>
+                      {clip.organizedPath && (
+                        <div className="text-[10px] text-green-300/80 bg-green-500/10 rounded px-1.5 py-0.5 mb-2 truncate inline-block">
+                          🗂️ {clip.organizedPath}
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-1 mb-2">
                         {clip.tags.slice(0, 3).map((tag) => (
                           <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full ${tagColors[tag] || "bg-white/10 text-white/50"}`}>
@@ -886,7 +922,15 @@ export default function LibraryPage() {
       </div>
 
       {/* Sort Preview Modal */}
-      {showSortPreview && sortPlan && (
+      {showSortPreview && sortPlan && (() => {
+        // All target folder paths the operator can place a review clip into
+        const targetFolders: string[] = [];
+        for (const cat of (taxonomy?.categories || [])) {
+          targetFolders.push(cat.name);
+          for (const sub of cat.subcategories) targetFolders.push(`${cat.name}/${sub.name}`);
+        }
+        const unplacedReview = sortPlan.needsReview.filter(a => a.clip.id && !manualPlacements[a.clip.id]).length;
+        return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
           <div className="bg-[#111118] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between mb-1">
@@ -929,17 +973,25 @@ export default function LibraryPage() {
                     </span>
                     <span className="text-xs text-yellow-300/60">{sortPlan.needsReview.length} clips</span>
                   </div>
-                  <div className="space-y-1 max-h-48 overflow-y-auto">
-                    {sortPlan.needsReview.slice(0, 30).map((a, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-xs bg-black/20 rounded-lg px-2 py-1.5">
-                        <span className="truncate text-white/70">{a.clip.name}</span>
-                        <span className="text-yellow-300/50 shrink-0 ml-2 text-[10px]">
+                  <div className="space-y-1 max-h-56 overflow-y-auto">
+                    {sortPlan.needsReview.slice(0, 50).map((a, idx) => (
+                      <div key={idx} className="flex items-center gap-2 text-xs bg-black/20 rounded-lg px-2 py-1.5">
+                        <span className="truncate text-white/70 flex-1">{a.clip.name}</span>
+                        <span className="text-yellow-300/40 shrink-0 text-[10px]">
                           {a.categoryName === "Unsorted" ? "no match" : `${a.categoryName}?`}
                         </span>
+                        <select
+                          value={a.clip.id ? (manualPlacements[a.clip.id] || "") : ""}
+                          onChange={e => a.clip.id && setManualPlacements(prev => ({ ...prev, [a.clip.id!]: e.target.value }))}
+                          className="bg-[#1a1a22] border border-white/10 rounded px-1.5 py-1 text-[11px] text-white outline-none focus:border-yellow-400/40 shrink-0 max-w-[140px]"
+                        >
+                          <option value="">— place in —</option>
+                          {targetFolders.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
                       </div>
                     ))}
-                    {sortPlan.needsReview.length > 30 && (
-                      <p className="text-[10px] text-yellow-300/40 px-2 pt-1">+{sortPlan.needsReview.length - 30} more</p>
+                    {sortPlan.needsReview.length > 50 && (
+                      <p className="text-[10px] text-yellow-300/40 px-2 pt-1">+{sortPlan.needsReview.length - 50} more — apply these, then re-run to review the rest</p>
                     )}
                   </div>
                 </div>
@@ -952,24 +1004,34 @@ export default function LibraryPage() {
               </p>
             )}
 
+            {unplacedReview > 0 && (
+              <p className="text-xs text-yellow-300/60 mt-3">
+                {unplacedReview} unsure clips still unplaced — they&apos;ll stay where they are unless you pick a folder.
+              </p>
+            )}
+
             <div className="flex gap-3 mt-4 pt-4 border-t border-white/10">
               <button
                 onClick={() => setShowSortPreview(false)}
                 className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-white/60 hover:bg-white/5 text-sm"
               >
-                Close
+                Cancel
               </button>
               <button
-                disabled
-                title="Real Drive moving — coming next (needs Drive write permission)"
-                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-500/20 text-blue-300/50 text-sm cursor-not-allowed border border-blue-500/20"
+                onClick={handleApplyOrganization}
+                disabled={applying}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-green-500/20 text-green-300 hover:bg-green-500/30 text-sm border border-green-500/30 disabled:opacity-50"
               >
-                Apply to Drive (next step)
+                {applying ? "Organizing..." : "Apply organization (in app)"}
               </button>
             </div>
+            <p className="text-[10px] text-white/30 text-center mt-2">
+              Saves the layout in the app only. Pushing to real Drive is a separate confirmed step.
+            </p>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Drive Sync Modal */}
       {showDriveModal && (

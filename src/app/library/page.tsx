@@ -337,9 +337,15 @@ export default function LibraryPage() {
 
     setAiScanning(true);
     setAiScanStatus("Starting AI scan...");
+
+    // How many analysed in the target scope right now (baseline for progress)
+    const inScope = (c: Clip) => {
+      const p = (c as Clip & { path?: string }).path || "";
+      return !selectedDriveFolder || p === selectedDriveFolder || p.startsWith(selectedDriveFolder + "/");
+    };
+    const baseline = clips.filter(c => c.aiAnalysedAt && inScope(c)).length;
+
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min max
       const res = await fetch("/api/agent/scan-drive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -347,42 +353,47 @@ export default function LibraryPage() {
           clientId: selectedClient,
           accessToken: session?.accessToken,
           taxonomy,
-          protectedFolders: Object.keys(folderRules), // frozen + additive — skip both
-          folderFilter: selectedDriveFolder || undefined, // scan only selected folder if one is picked
+          protectedFolders: Object.keys(folderRules),
+          folderFilter: selectedDriveFolder || undefined,
         }),
-        signal: controller.signal,
       });
-      clearTimeout(timeout);
       const data = await res.json();
       if (data.error) {
         setAiScanStatus("❌ Error: " + data.error);
-      } else {
-        const { analysed = 0, errors = 0, skipped = 0 } = data;
-        if (analysed === 0 && !session?.accessToken) {
-          setAiScanStatus("⚠️ Not connected to Google — click 'Import from Drive' to sign in first, then scan again");
-        } else if (analysed === 0) {
-          setAiScanStatus(`⚠️ 0 analysed — ${errors} errors, ${skipped} skipped (no video URL). Check Railway logs.`);
-        } else {
-          setAiScanStatus(`✅ Analysed ${analysed} clips! ${errors > 0 ? `(${errors} failed)` : ""}`);
-          await loadClips();
-          // Write to agent memory so other agents know what was scanned
-          const totalAnalysed = clips.filter(c => c.aiAnalysedAt).length + analysed;
-          await updateAgentMemory(selectedClient, {
-            lastScanAt: new Date().toISOString(),
-            totalAnalysed,
-          });
-          await logAgentEvent(selectedClient, {
-            agent: "drive-scanner",
-            type: "scan-complete",
-            payload: { analysed, errors, skipped, totalAnalysed },
-          });
-        }
+        setAiScanning(false);
+        return;
       }
+
+      const toScan: number = data.to_scan ?? 0;
+      if (toScan === 0) {
+        setAiScanStatus("✅ Nothing new to scan in this scope.");
+        setAiScanning(false);
+        setTimeout(() => setAiScanStatus(""), 5000);
+        return;
+      }
+
+      // The worker scans in the background — poll Firestore to watch tags appear.
+      setAiScanStatus(`🤖 Scanning ${toScan} clips in the background… tags appear as they finish.`);
+      let polls = 0;
+      const maxPolls = Math.ceil((toScan * 20) / 12) + 8; // generous: ~12s/clip
+      const poll = setInterval(async () => {
+        polls++;
+        const fresh = await getClipsByClient(selectedClient);
+        setClips(fresh);
+        const done = fresh.filter(c => c.aiAnalysedAt && inScope(c)).length - baseline;
+        setAiScanStatus(`🤖 Scanned ${Math.max(0, done)} / ${toScan}…`);
+        if (done >= toScan || polls >= maxPolls) {
+          clearInterval(poll);
+          setAiScanning(false);
+          setAiScanStatus(`✅ Scan finished — ${Math.max(0, done)} clips tagged.`);
+          await updateAgentMemory(selectedClient, { lastScanAt: new Date().toISOString() });
+          await logAgentEvent(selectedClient, { agent: "drive-scanner", type: "scan-complete", payload: { scanned: done } });
+          setTimeout(() => setAiScanStatus(""), 8000);
+        }
+      }, 12000);
     } catch (err) {
       setAiScanStatus("Scan failed: " + String(err));
-    } finally {
       setAiScanning(false);
-      setTimeout(() => setAiScanStatus(""), 5000);
     }
   }
 

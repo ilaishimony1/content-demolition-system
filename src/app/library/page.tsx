@@ -45,6 +45,7 @@ export default function LibraryPage() {
   const [showSortPreview, setShowSortPreview] = useState(false);
   const [applying, setApplying] = useState(false);
   const [manualPlacements, setManualPlacements] = useState<Record<string, string>>({});
+  const [organizedFilter, setOrganizedFilter] = useState<"all" | "unorganized" | "organized">("all");
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState("");
   const [bulkNewFolder, setBulkNewFolder] = useState(false);
@@ -410,8 +411,9 @@ export default function LibraryPage() {
       const parts = path.split("/");
       for (let i = 1; i <= parts.length; i++) all.add(parts.slice(0, i).join("/"));
     };
-    // Folders that contain clips
-    for (const c of clips) addWithAncestors((c as Clip & { path?: string }).path || "");
+    // Folders that contain clips — use effective (organized) path so moved clips
+    // relocate to their new folder
+    for (const c of clips) addWithAncestors(c.organizedPath || (c as Clip & { path?: string }).path || "");
     // Plus every folder from the last Drive scan — including empty ones (בלאגן, etc.)
     for (const f of storedFolders) addWithAncestors(f);
     return Array.from(all).sort();
@@ -451,8 +453,12 @@ export default function LibraryPage() {
 
   const filteredClips = clips.filter((clip) => {
     const matchesWorkflow = selectedFolder === "all" || clip.folder === selectedFolder;
-    const clipPath = (clip as Clip & { path?: string }).path || "";
+    // Effective location = where it's organized to (if moved), else its real Drive path
+    const clipPath = clip.organizedPath || (clip as Clip & { path?: string }).path || "";
     const matchesDriveFolder = !selectedDriveFolder || clipPath === selectedDriveFolder || clipPath.startsWith(selectedDriveFolder + "/");
+    // Organized filter — lets the operator work a shrinking "still to sort" pile
+    if (organizedFilter === "unorganized" && clip.organizedPath) return false;
+    if (organizedFilter === "organized" && !clip.organizedPath) return false;
     const matchesSearch = searchQuery === "" ||
       clip.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       clip.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -652,6 +658,20 @@ export default function LibraryPage() {
                 className="w-full bg-[#111118] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 transition-colors"
               />
             </div>
+            {/* Organized filter — shrink the "still to sort" pile as you go */}
+            <div className="flex gap-1 bg-[#111118] border border-white/10 rounded-lg p-1 shrink-0">
+              {([["all", "All"], ["unorganized", "To sort"], ["organized", "Sorted"]] as const).map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setOrganizedFilter(val)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    organizedFilter === val ? "bg-orange-500 text-white" : "text-white/50 hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Upload Progress */}
@@ -704,7 +724,7 @@ export default function LibraryPage() {
                   </button>
                   {driveFolders.map((folder) => {
                     const count = clips.filter(c => {
-                      const p = (c as Clip & { path?: string }).path || "";
+                      const p = c.organizedPath || (c as Clip & { path?: string }).path || "";
                       return p === folder || p.startsWith(folder + "/");
                     }).length;
                     const depth = folder.split("/").length - 1;

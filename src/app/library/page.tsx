@@ -645,7 +645,6 @@ export default function LibraryPage() {
                     const isTop = depth === 0;
                     const isSelected = selectedDriveFolder === folder;
                     const protection = folderRules[folder] || "managed";
-                    const protIcon = protection === "frozen" ? "🔒" : protection === "additive" ? "➕" : "";
                     return (
                       <div
                         key={folder}
@@ -665,7 +664,12 @@ export default function LibraryPage() {
                           {!isTop && <span className="text-white/20">└</span>}
                           <span>{isTop ? "📁" : "📂"}</span>
                           <span className="truncate">{label}</span>
-                          {protIcon && <span title={protection === "frozen" ? "Frozen — agent never touches" : "Additive — agent only adds"}>{protIcon}</span>}
+                          {protection === "frozen" && (
+                            <span title="Frozen — agent never touches" className="shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40">🔒 LOCKED</span>
+                          )}
+                          {protection === "additive" && (
+                            <span title="Additive — agent only adds, never removes" className="shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-green-500/25 text-green-300 border border-green-500/40">➕ ADD-ONLY</span>
+                          )}
                         </button>
                         <span className="text-white/30 shrink-0 mr-1">{count}</span>
                         <button

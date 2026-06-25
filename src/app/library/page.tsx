@@ -7,7 +7,7 @@ import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, get
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildSortPlan, SortPlan } from "@/lib/sorter";
-import { getFolderRules, setFolderRule, FolderProtection } from "@/lib/folderRules";
+import { getFolderRules, setFolderRule, protectionForPath, FolderProtection } from "@/lib/folderRules";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -313,7 +313,12 @@ export default function LibraryPage() {
       const res = await fetch("/api/agent/scan-drive", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId: selectedClient, accessToken: session?.accessToken, taxonomy }),
+        body: JSON.stringify({
+          clientId: selectedClient,
+          accessToken: session?.accessToken,
+          taxonomy,
+          protectedFolders: Object.keys(folderRules), // frozen + additive — skip both
+        }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -372,6 +377,12 @@ export default function LibraryPage() {
 
   // AI categories derived from analysed clips
   const analysedClips = clips.filter(c => c.aiAnalysedAt);
+
+  // Unanalysed clips the agent will actually scan — excludes protected folders
+  const managedUnanalysed = clips.filter(
+    c => !c.aiAnalysedAt && protectionForPath((c as Clip & { path?: string }).path || "", folderRules) === "managed"
+  ).length;
+  const protectedUnanalysed = clips.filter(c => !c.aiAnalysedAt).length - managedUnanalysed;
   const aiCategories = [
     { id: "all", label: "All analysed", emoji: "🤖", count: analysedClips.length },
     ...Array.from(new Set(analysedClips.map(c => c.aiContentType).filter(Boolean))).map(ct => ({
@@ -505,7 +516,7 @@ export default function LibraryPage() {
                   {aiScanning ? "Scanning..." : "Scan with AI"}
                 </div>
                 <div className="text-xs text-white/40">
-                  {clips.filter(c => !c.aiAnalysedAt).length} unanalysed clips
+                  {managedUnanalysed} to scan{protectedUnanalysed > 0 ? ` · ${protectedUnanalysed} protected (skipped)` : ""}
                 </div>
               </div>
             </button>

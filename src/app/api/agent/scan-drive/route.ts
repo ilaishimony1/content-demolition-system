@@ -4,14 +4,14 @@ const workerUrl = process.env.WORKER_URL!;
 const workerSecret = process.env.WORKER_SECRET!;
 
 export async function POST(req: NextRequest) {
-  const { clientId, accessToken, taxonomy } = await req.json();
+  const { clientId, accessToken, taxonomy, protectedFolders } = await req.json();
   if (!clientId) return NextResponse.json({ error: "Missing clientId" }, { status: 400 });
 
   try {
     const res = await fetch(`${workerUrl}/scan-drive`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-worker-secret": workerSecret },
-      body: JSON.stringify({ client_id: clientId, google_access_token: accessToken, taxonomy }),
+      body: JSON.stringify({ client_id: clientId, google_access_token: accessToken, taxonomy, protected_folders: protectedFolders }),
     });
     const data = await res.json();
     return NextResponse.json(data);

@@ -894,18 +894,22 @@ export default function LibraryPage() {
               <button onClick={() => setShowSortPreview(false)} className="text-white/30 hover:text-white text-xl">✕</button>
             </div>
             <p className="text-white/50 text-sm mb-4">
-              Here&apos;s how the agent will sort <span className="text-blue-300">{sortPlan.assignments.length}</span> analysed clips for{" "}
-              <span className="text-white">{currentClient?.name}</span>. Review before applying — nothing moves in Drive yet.
+              The agent is <span className="text-green-300">sure</span> about{" "}
+              <span className="text-green-300">{sortPlan.assignments.filter(a => !a.needsReview).length}</span> clips and{" "}
+              <span className="text-yellow-300">unsure</span> about{" "}
+              <span className="text-yellow-300">{sortPlan.needsReview.length}</span> — those are flagged for you to place.
+              Nothing moves in Drive yet.
             </p>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {/* Confident placements */}
               {Object.entries(sortPlan.byFolder)
                 .sort((a, b) => b[1].length - a[1].length)
                 .map(([folder, items]) => (
                   <div key={folder} className="bg-white/5 rounded-xl p-3">
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm font-medium flex items-center gap-2 ${folder === "Unsorted" ? "text-yellow-400" : "text-white"}`}>
-                        {folder === "Unsorted" ? "⚠️" : "📂"} {folder}
+                      <span className="text-sm font-medium flex items-center gap-2 text-white">
+                        ✅ 📂 {folder}
                       </span>
                       <span className="text-xs text-white/40">{items.length} clips</span>
                     </div>
@@ -915,16 +919,36 @@ export default function LibraryPage() {
                     </div>
                   </div>
                 ))}
+
+              {/* Needs review — AI unsure */}
+              {sortPlan.needsReview.length > 0 && (
+                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-yellow-300 flex items-center gap-2">
+                      🔍 Needs your review
+                    </span>
+                    <span className="text-xs text-yellow-300/60">{sortPlan.needsReview.length} clips</span>
+                  </div>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {sortPlan.needsReview.slice(0, 30).map((a, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-xs bg-black/20 rounded-lg px-2 py-1.5">
+                        <span className="truncate text-white/70">{a.clip.name}</span>
+                        <span className="text-yellow-300/50 shrink-0 ml-2 text-[10px]">
+                          {a.categoryName === "Unsorted" ? "no match" : `${a.categoryName}?`}
+                        </span>
+                      </div>
+                    ))}
+                    {sortPlan.needsReview.length > 30 && (
+                      <p className="text-[10px] text-yellow-300/40 px-2 pt-1">+{sortPlan.needsReview.length - 30} more</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {sortPlan.protectedCount > 0 && (
               <p className="text-xs text-blue-300/70 mt-3">
                 🔒 {sortPlan.protectedCount} clips in protected folders left untouched.
-              </p>
-            )}
-            {sortPlan.unmatched.length > 0 && (
-              <p className="text-xs text-yellow-400/70 mt-3">
-                {sortPlan.unmatched.length} clips couldn&apos;t be matched — add sub-folders or rename categories to capture them.
               </p>
             )}
 

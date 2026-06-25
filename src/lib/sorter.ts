@@ -22,13 +22,15 @@ export interface Assignment {
   subId: string | null;            // taxonomy subcategory id, or null
   subName: string | null;          // subfolder name
   confidence: "high" | "medium" | "low";
+  needsReview: boolean;            // AI not sure enough — operator should confirm/place it
   reason: string;                  // why this clip landed here (for the preview)
 }
 
 export interface SortPlan {
   assignments: Assignment[];
-  byFolder: Record<string, Assignment[]>;   // grouped for the preview
+  byFolder: Record<string, Assignment[]>;   // grouped for the preview (confident only)
   unmatched: Assignment[];
+  needsReview: Assignment[];                 // AI unsure — operator places these manually
   protectedCount: number;                    // clips left untouched by protection rules
 }
 
@@ -101,7 +103,8 @@ export function buildSortPlan(
         subId: null,
         subName: null,
         confidence: "low",
-        reason: "No matching topic — needs manual review",
+        needsReview: true,
+        reason: "AI couldn't match a topic — you decide where it goes",
       });
       continue;
     }
@@ -114,30 +117,50 @@ export function buildSortPlan(
       if (s > bestScore) { bestScore = s; bestSub = sub; }
     }
 
-    const matchedById = cat.id === clip.aiContentType;
+    const hasSubs = cat.subcategories.length > 0;
+    // Decide confidence + whether the operator needs to confirm:
+    //  - matched a specific subfolder        → confident
+    //  - category has subfolders but no match → unsure WHICH sub → needs review
+    //  - category has no subfolders           → confident (nothing finer to pick)
+    let confidence: "high" | "medium" | "low";
+    let needsReview: boolean;
+    let reason: string;
+    if (bestSub) {
+      confidence = "high";
+      needsReview = false;
+      reason = `Sure: matched "${bestSub.name}" in ${cat.name}`;
+    } else if (hasSubs) {
+      confidence = "low";
+      needsReview = true;
+      reason = `Knows it's ${cat.name} but not which subfolder — please pick`;
+    } else {
+      confidence = "medium";
+      needsReview = false;
+      reason = `Filed under ${cat.name}`;
+    }
+
     assignments.push({
       clip,
       categoryId: cat.id,
       categoryName: cat.name,
       subId: bestSub?.id || null,
       subName: bestSub?.name || null,
-      confidence: bestSub ? "high" : matchedById ? "medium" : "low",
-      reason: bestSub
-        ? `Matched "${bestSub.name}" in ${cat.name}`
-        : matchedById
-        ? `AI tagged as ${cat.name}`
-        : `Topic mentions ${cat.name}`,
+      confidence,
+      needsReview,
+      reason,
     });
   }
 
-  // Group by destination folder path for the preview
+  // Confident clips grouped by destination folder for the preview
   const byFolder: Record<string, Assignment[]> = {};
   for (const a of assignments) {
+    if (a.needsReview) continue;
     const path = a.subName ? `${a.categoryName} / ${a.subName}` : a.categoryName;
     (byFolder[path] ||= []).push(a);
   }
 
+  const needsReview = assignments.filter(a => a.needsReview);
   const unmatched = assignments.filter(a => a.categoryId === null);
 
-  return { assignments, byFolder, unmatched, protectedCount };
+  return { assignments, byFolder, unmatched, needsReview, protectedCount };
 }

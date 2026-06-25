@@ -13,6 +13,7 @@
 
 import { Clip } from "@/lib/clips";
 import { ClientTaxonomy, TaxonomyCategory, TaxonomySubcategory } from "@/lib/taxonomy";
+import { FolderProtection, protectionForPath } from "@/lib/folderRules";
 
 export interface Assignment {
   clip: Clip;
@@ -28,6 +29,7 @@ export interface SortPlan {
   assignments: Assignment[];
   byFolder: Record<string, Assignment[]>;   // grouped for the preview
   unmatched: Assignment[];
+  protectedCount: number;                    // clips left untouched by protection rules
 }
 
 // Build the searchable text blob for a clip from its AI fields
@@ -68,11 +70,25 @@ function pickCategory(clip: Clip, taxonomy: ClientTaxonomy): TaxonomyCategory | 
   return null;
 }
 
-export function buildSortPlan(clips: Clip[], taxonomy: ClientTaxonomy): SortPlan {
+export function buildSortPlan(
+  clips: Clip[],
+  taxonomy: ClientTaxonomy,
+  rules: Record<string, FolderProtection> = {}
+): SortPlan {
   const assignments: Assignment[] = [];
+  let protectedCount = 0;
 
   for (const clip of clips) {
     if (!clip.aiAnalysedAt) continue; // can't sort what hasn't been analysed
+
+    // Respect folder protection — frozen & additive folders never lose clips.
+    // A clip already inside a protected folder stays exactly where it is.
+    const currentPath = (clip as Clip & { path?: string }).path || "";
+    const protection = protectionForPath(currentPath, rules);
+    if (protection === "frozen" || protection === "additive") {
+      protectedCount++;
+      continue;
+    }
 
     const text = clipText(clip);
     const cat = pickCategory(clip, taxonomy);
@@ -123,5 +139,5 @@ export function buildSortPlan(clips: Clip[], taxonomy: ClientTaxonomy): SortPlan
 
   const unmatched = assignments.filter(a => a.categoryId === null);
 
-  return { assignments, byFolder, unmatched };
+  return { assignments, byFolder, unmatched, protectedCount };
 }

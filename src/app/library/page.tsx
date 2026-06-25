@@ -7,6 +7,7 @@ import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, get
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildSortPlan, SortPlan } from "@/lib/sorter";
+import { getFolderRules, setFolderRule, FolderProtection } from "@/lib/folderRules";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -43,6 +44,8 @@ export default function LibraryPage() {
   const [sortPlan, setSortPlan] = useState<SortPlan | null>(null);
   const [showSortPreview, setShowSortPreview] = useState(false);
   const [storedFolders, setStoredFolders] = useState<string[]>([]);
+  const [folderRules, setFolderRules] = useState<Record<string, FolderProtection>>({});
+  const [rulesMenuFor, setRulesMenuFor] = useState<string | null>(null);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -66,8 +69,15 @@ export default function LibraryPage() {
       loadAllCounts();
       loadTaxonomy();
       getDriveFolders(selectedClient).then(setStoredFolders);
+      getFolderRules(selectedClient).then(setFolderRules);
     }
   }, [selectedClient, user]);
+
+  async function changeFolderRule(folder: string, level: FolderProtection) {
+    const next = await setFolderRule(selectedClient, folder, level);
+    setFolderRules(next);
+    setRulesMenuFor(null);
+  }
 
   async function loadTaxonomy() {
     const existing = await getTaxonomy(selectedClient);
@@ -249,7 +259,7 @@ export default function LibraryPage() {
     // Use existing taxonomy, or build a default from the AI labels
     const labels = [...new Set(analysed.map(c => c.aiContentType).filter(Boolean))] as string[];
     const tax = taxonomy || buildDefaultTaxonomy(selectedClient, labels);
-    const plan = buildSortPlan(analysed, tax);
+    const plan = buildSortPlan(analysed, tax, folderRules);
     setSortPlan(plan);
     setShowSortPreview(true);
   }
@@ -603,26 +613,43 @@ export default function LibraryPage() {
                     const label = folder.split("/").pop()!;
                     const isTop = depth === 0;
                     const isSelected = selectedDriveFolder === folder;
+                    const protection = folderRules[folder] || "managed";
+                    const protIcon = protection === "frozen" ? "🔒" : protection === "additive" ? "➕" : "";
                     return (
-                      <button
+                      <div
                         key={folder}
-                        onClick={() => setSelectedDriveFolder(folder === selectedDriveFolder ? null : folder)}
-                        className={`w-full text-left py-1.5 rounded-lg text-xs transition-all flex items-center justify-between ${
+                        className={`group/folder relative w-full rounded-lg text-xs transition-all flex items-center ${
                           isSelected
                             ? "bg-orange-500/20 text-orange-400"
                             : isTop
                             ? "text-white/80 font-medium hover:bg-white/5"
                             : "text-white/45 hover:bg-white/5 hover:text-white"
                         }`}
-                        style={{ paddingLeft: `${10 + depth * 16}px`, paddingRight: "12px" }}
+                        style={{ paddingLeft: `${10 + depth * 16}px`, paddingRight: "8px" }}
                       >
-                        <span className="flex items-center gap-1.5 truncate">
+                        <button
+                          onClick={() => setSelectedDriveFolder(folder === selectedDriveFolder ? null : folder)}
+                          className="flex-1 text-left py-1.5 flex items-center gap-1.5 truncate min-w-0"
+                        >
                           {!isTop && <span className="text-white/20">└</span>}
                           <span>{isTop ? "📁" : "📂"}</span>
                           <span className="truncate">{label}</span>
-                        </span>
-                        <span className="text-white/30 shrink-0">{count}</span>
-                      </button>
+                          {protIcon && <span title={protection === "frozen" ? "Frozen — agent never touches" : "Additive — agent only adds"}>{protIcon}</span>}
+                        </button>
+                        <span className="text-white/30 shrink-0 mr-1">{count}</span>
+                        <button
+                          onClick={() => setRulesMenuFor(rulesMenuFor === folder ? null : folder)}
+                          className="opacity-0 group-hover/folder:opacity-100 text-white/30 hover:text-white shrink-0 px-1"
+                          title="Protection"
+                        >🛡️</button>
+                        {rulesMenuFor === folder && (
+                          <div className="absolute right-0 top-full mt-1 z-30 bg-[#1a1a22] border border-white/10 rounded-lg shadow-xl py-1 w-44 text-left">
+                            <button onClick={() => changeFolderRule(folder, "managed")} className={`w-full text-left px-3 py-1.5 hover:bg-white/5 ${protection === "managed" ? "text-orange-400" : "text-white/70"}`}>🟢 Managed (default)</button>
+                            <button onClick={() => changeFolderRule(folder, "additive")} className={`w-full text-left px-3 py-1.5 hover:bg-white/5 ${protection === "additive" ? "text-orange-400" : "text-white/70"}`}>➕ Additive only</button>
+                            <button onClick={() => changeFolderRule(folder, "frozen")} className={`w-full text-left px-3 py-1.5 hover:bg-white/5 ${protection === "frozen" ? "text-orange-400" : "text-white/70"}`}>🔒 Frozen (off-limits)</button>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
@@ -890,6 +917,11 @@ export default function LibraryPage() {
                 ))}
             </div>
 
+            {sortPlan.protectedCount > 0 && (
+              <p className="text-xs text-blue-300/70 mt-3">
+                🔒 {sortPlan.protectedCount} clips in protected folders left untouched.
+              </p>
+            )}
             {sortPlan.unmatched.length > 0 && (
               <p className="text-xs text-yellow-400/70 mt-3">
                 {sortPlan.unmatched.length} clips couldn&apos;t be matched — add sub-folders or rename categories to capture them.

@@ -45,6 +45,9 @@ export default function LibraryPage() {
   const [showSortPreview, setShowSortPreview] = useState(false);
   const [applying, setApplying] = useState(false);
   const [manualPlacements, setManualPlacements] = useState<Record<string, string>>({});
+  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
+  const [bulkTarget, setBulkTarget] = useState("");
+  const [movingBulk, setMovingBulk] = useState(false);
   const [storedFolders, setStoredFolders] = useState<string[]>([]);
   const [folderRules, setFolderRules] = useState<Record<string, FolderProtection>>({});
   const [rulesMenuFor, setRulesMenuFor] = useState<string | null>(null);
@@ -267,6 +270,32 @@ export default function LibraryPage() {
     setShowSortPreview(true);
   }
 
+  function toggleClipSelected(id: string) {
+    setSelectedClipIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function moveSelectedTo(folderPath: string) {
+    if (!folderPath || selectedClipIds.size === 0 || movingBulk) return;
+    setMovingBulk(true);
+    try {
+      const placements = Array.from(selectedClipIds).map(clipId => ({ clipId, organizedPath: folderPath }));
+      await applyOrganization(placements);
+      await loadClips();
+      const n = placements.length;
+      setSelectedClipIds(new Set());
+      setBulkTarget("");
+      alert(`✅ Moved ${n} clips to ${folderPath} (in app).`);
+    } catch (err) {
+      alert("Move failed: " + String(err));
+    } finally {
+      setMovingBulk(false);
+    }
+  }
+
   async function handleApplyOrganization() {
     if (!sortPlan || applying) return;
     setApplying(true);
@@ -378,6 +407,18 @@ export default function LibraryPage() {
 
   // AI categories derived from analysed clips
   const analysedClips = clips.filter(c => c.aiAnalysedAt);
+
+  // Target folders an operator can move clips into (from taxonomy + existing Drive folders)
+  const moveTargets: string[] = (() => {
+    const set = new Set<string>();
+    for (const cat of (taxonomy?.categories || [])) {
+      set.add(cat.name);
+      for (const sub of cat.subcategories) set.add(`${cat.name}/${sub.name}`);
+    }
+    // also allow moving into existing real Drive folders
+    for (const f of storedFolders) set.add(f);
+    return Array.from(set).sort();
+  })();
 
   // Unanalysed clips the agent will actually scan — excludes protected folders
   const managedUnanalysed = clips.filter(
@@ -849,9 +890,23 @@ export default function LibraryPage() {
                   <span className="text-purple-400"> · {aiCategories.find(c => c.id === selectedAiCategory)?.label}</span>
                 )}
               </h2>
-              {libraryView === "ai" && (
-                <span className="text-xs text-purple-400/60 bg-purple-500/10 px-2 py-1 rounded-lg">🤖 AI sorted by usability</span>
-              )}
+              <div className="flex items-center gap-2">
+                {filteredClips.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const ids = filteredClips.map(c => c.id!).filter(Boolean);
+                      const allSelected = ids.every(id => selectedClipIds.has(id));
+                      setSelectedClipIds(allSelected ? new Set() : new Set(ids));
+                    }}
+                    className="text-xs text-white/50 hover:text-white border border-white/10 rounded-lg px-2 py-1"
+                  >
+                    {filteredClips.every(c => c.id && selectedClipIds.has(c.id)) ? "Clear selection" : `Select all ${filteredClips.length}`}
+                  </button>
+                )}
+                {libraryView === "ai" && (
+                  <span className="text-xs text-purple-400/60 bg-purple-500/10 px-2 py-1 rounded-lg">🤖 sorted by usability</span>
+                )}
+              </div>
             </div>
 
             {(() => {
@@ -868,8 +923,16 @@ export default function LibraryPage() {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                 {filteredClips.map((clip) => (
-                  <div key={clip.id} className="bg-[#111118] border border-white/10 rounded-xl overflow-hidden hover:border-orange-500/30 transition-all group">
+                  <div key={clip.id} className={`bg-[#111118] border rounded-xl overflow-hidden transition-all group ${clip.id && selectedClipIds.has(clip.id) ? "border-orange-500 ring-1 ring-orange-500/50" : "border-white/10 hover:border-orange-500/30"}`}>
                     <div className="aspect-video bg-white/5 flex items-center justify-center relative overflow-hidden">
+                      {/* Selection checkbox */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (clip.id) toggleClipSelected(clip.id); }}
+                        className={`absolute top-2 left-1/2 -translate-x-1/2 z-10 w-6 h-6 rounded-md flex items-center justify-center text-xs transition-all ${
+                          clip.id && selectedClipIds.has(clip.id) ? "bg-orange-500 text-white opacity-100" : "bg-black/50 text-white/70 opacity-0 group-hover:opacity-100"
+                        }`}
+                        title="Select"
+                      >{clip.id && selectedClipIds.has(clip.id) ? "✓" : "+"}</button>
                       {(clip.thumbnailUrl || clip.driveThumbnailUrl) ? (
                         <img
                           src={clip.thumbnailUrl || clip.driveThumbnailUrl}
@@ -938,6 +1001,30 @@ export default function LibraryPage() {
           </div> {/* end folder browser + clips grid flex */}
         </div>
       </div>
+
+      {/* Bulk move action bar */}
+      {selectedClipIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#1a1a22] border border-orange-500/30 rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
+          <span className="text-sm font-medium text-orange-300">{selectedClipIds.size} selected</span>
+          <span className="text-white/20">→</span>
+          <select
+            value={bulkTarget}
+            onChange={(e) => setBulkTarget(e.target.value)}
+            className="bg-[#111118] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 max-w-[220px]"
+          >
+            <option value="">Choose folder…</option>
+            {moveTargets.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <button
+            onClick={() => moveSelectedTo(bulkTarget)}
+            disabled={!bulkTarget || movingBulk}
+            className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-40"
+          >
+            {movingBulk ? "Moving…" : "Move here"}
+          </button>
+          <button onClick={() => setSelectedClipIds(new Set())} className="text-white/40 hover:text-white text-lg px-1">✕</button>
+        </div>
+      )}
 
       {/* Sort Preview Modal */}
       {showSortPreview && sortPlan && (() => {

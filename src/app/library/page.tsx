@@ -318,6 +318,7 @@ export default function LibraryPage() {
           accessToken: session?.accessToken,
           taxonomy,
           protectedFolders: Object.keys(folderRules), // frozen + additive — skip both
+          folderFilter: selectedDriveFolder || undefined, // scan only selected folder if one is picked
         }),
         signal: controller.signal,
       });
@@ -513,10 +514,12 @@ export default function LibraryPage() {
               <span className="text-xl">🤖</span>
               <div className="text-left">
                 <div className="text-sm font-medium text-purple-300">
-                  {aiScanning ? "Scanning..." : "Scan with AI"}
+                  {aiScanning ? "Scanning..." : selectedDriveFolder ? `Scan "${selectedDriveFolder.split("/").pop()}"` : "Scan with AI"}
                 </div>
                 <div className="text-xs text-white/40">
-                  {managedUnanalysed} to scan{protectedUnanalysed > 0 ? ` · ${protectedUnanalysed} protected (skipped)` : ""}
+                  {selectedDriveFolder
+                    ? `${clips.filter(c => { const p = (c as Clip & {path?:string}).path||""; return (p===selectedDriveFolder||p.startsWith(selectedDriveFolder+"/")) && !c.aiAnalysedAt; }).length} unscanned in folder`
+                    : `${managedUnanalysed} to scan${protectedUnanalysed > 0 ? ` · ${protectedUnanalysed} protected (skipped)` : ""}`}
                 </div>
               </div>
             </button>

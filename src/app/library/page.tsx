@@ -47,6 +47,7 @@ export default function LibraryPage() {
   const [manualPlacements, setManualPlacements] = useState<Record<string, string>>({});
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState("");
+  const [bulkNewFolder, setBulkNewFolder] = useState(false);
   const [movingBulk, setMovingBulk] = useState(false);
   const [storedFolders, setStoredFolders] = useState<string[]>([]);
   const [folderRules, setFolderRules] = useState<Record<string, FolderProtection>>({});
@@ -1007,22 +1008,37 @@ export default function LibraryPage() {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#1a1a22] border border-orange-500/30 rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
           <span className="text-sm font-medium text-orange-300">{selectedClipIds.size} selected</span>
           <span className="text-white/20">→</span>
-          <select
-            value={bulkTarget}
-            onChange={(e) => setBulkTarget(e.target.value)}
-            className="bg-[#111118] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 max-w-[220px]"
-          >
-            <option value="">Choose folder…</option>
-            {moveTargets.map(f => <option key={f} value={f}>{f}</option>)}
-          </select>
+          {bulkNewFolder ? (
+            <input
+              autoFocus
+              value={bulkTarget}
+              onChange={(e) => setBulkTarget(e.target.value)}
+              placeholder="e.g. ספורט/שחייה"
+              className="bg-[#111118] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 w-[220px]"
+            />
+          ) : (
+            <select
+              value={bulkTarget}
+              onChange={(e) => setBulkTarget(e.target.value)}
+              className="bg-[#111118] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 max-w-[220px]"
+            >
+              <option value="">Choose folder…</option>
+              {moveTargets.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+          )}
           <button
-            onClick={() => moveSelectedTo(bulkTarget)}
-            disabled={!bulkTarget || movingBulk}
+            onClick={() => { setBulkNewFolder(!bulkNewFolder); setBulkTarget(""); }}
+            className="text-xs text-white/50 hover:text-white border border-white/10 rounded-lg px-2 py-2"
+            title="Create a new folder"
+          >{bulkNewFolder ? "📋 Pick" : "+ New"}</button>
+          <button
+            onClick={() => moveSelectedTo(bulkTarget.trim())}
+            disabled={!bulkTarget.trim() || movingBulk}
             className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-40"
           >
             {movingBulk ? "Moving…" : "Move here"}
           </button>
-          <button onClick={() => setSelectedClipIds(new Set())} className="text-white/40 hover:text-white text-lg px-1">✕</button>
+          <button onClick={() => { setSelectedClipIds(new Set()); setBulkNewFolder(false); }} className="text-white/40 hover:text-white text-lg px-1">✕</button>
         </div>
       )}
 

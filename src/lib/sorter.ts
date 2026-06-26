@@ -41,6 +41,7 @@ function clipText(clip: Clip): string {
     clip.aiTopic,
     clip.aiSetting,
     clip.aiNotes,
+    ...(clip.aiTags || []),
     clip.name,
   ].filter(Boolean).join(" ").toLowerCase();
 }

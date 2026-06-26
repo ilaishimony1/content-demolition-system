@@ -457,11 +457,13 @@ export default function LibraryPage() {
     // Selecting a folder shows clips DIRECTLY in it (not its subfolders) — so as you
     // sort a clip into a subfolder, it leaves this view.
     const matchesDriveFolder = !selectedDriveFolder || clipPath === selectedDriveFolder;
+    const q = searchQuery.toLowerCase();
     const matchesSearch = searchQuery === "" ||
-      clip.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      clip.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (clip.aiContentType || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (clip.aiTopic || "").toLowerCase().includes(searchQuery.toLowerCase());
+      clip.name.toLowerCase().includes(q) ||
+      clip.tags.some(tag => tag.toLowerCase().includes(q)) ||
+      (clip.aiTags || []).some(tag => tag.toLowerCase().includes(q)) ||
+      (clip.aiContentType || "").toLowerCase().includes(q) ||
+      (clip.aiTopic || "").toLowerCase().includes(q);
 
     if (libraryView === "ai") {
       if (!clip.aiAnalysedAt) return false;
@@ -1005,6 +1007,14 @@ export default function LibraryPage() {
                           {clip.aiHookQuality && <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300">🎣 {clip.aiHookQuality}</span>}
                           {clip.aiHasFace === "yes" && <span className="text-xs px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300">👤 face</span>}
                           {clip.aiUsabilityScore && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-300">★ {clip.aiUsabilityScore}/10</span>}
+                        </div>
+                      )}
+                      {/* Activity/subject multi-tags */}
+                      {clip.aiTags && clip.aiTags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {clip.aiTags.slice(0, 5).map(tag => (
+                            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/60">#{tag}</span>
+                          ))}
                         </div>
                       )}
                       {clip.size && <p className="text-xs text-white/30">{clip.size}</p>}

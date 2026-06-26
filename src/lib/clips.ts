@@ -47,6 +47,7 @@ export interface Clip {
   aiHasFace?: string;
   aiIsTalking?: string;
   aiNotes?: string;
+  aiTags?: string[];   // multi-label: format + every activity/subject (e.g. ["vlog","cycling","outdoor"])
   aiAnalysedAt?: string;
 }
 

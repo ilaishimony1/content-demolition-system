@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, applyOrganization, Clip } from "@/lib/clips";
+import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, applyOrganization, moveFolderClips, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildSortPlan, SortPlan } from "@/lib/sorter";
@@ -52,6 +52,9 @@ export default function LibraryPage() {
   const [storedFolders, setStoredFolders] = useState<string[]>([]);
   const [folderRules, setFolderRules] = useState<Record<string, FolderProtection>>({});
   const [rulesMenuFor, setRulesMenuFor] = useState<string | null>(null);
+  const [manageFolder, setManageFolder] = useState<string | null>(null);
+  const [folderOpTarget, setFolderOpTarget] = useState("");
+  const [folderOpBusy, setFolderOpBusy] = useState(false);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -83,6 +86,23 @@ export default function LibraryPage() {
     const next = await setFolderRule(selectedClient, folder, level);
     setFolderRules(next);
     setRulesMenuFor(null);
+  }
+
+  async function runFolderOp(oldPath: string, newPath: string, label: string) {
+    if (!newPath || folderOpBusy) return;
+    setFolderOpBusy(true);
+    try {
+      const n = await moveFolderClips(selectedClient, oldPath, newPath);
+      await loadClips();
+      setManageFolder(null);
+      setFolderOpTarget("");
+      if (selectedDriveFolder === oldPath) setSelectedDriveFolder(newPath);
+      alert(`✅ ${label}: ${n} clips → ${newPath}`);
+    } catch (err) {
+      alert("Folder op failed: " + String(err));
+    } finally {
+      setFolderOpBusy(false);
+    }
   }
 
   async function loadTaxonomy() {
@@ -748,6 +768,11 @@ export default function LibraryPage() {
                         </button>
                         <span className="text-white/30 shrink-0 mr-1">{count}</span>
                         <button
+                          onClick={() => { setManageFolder(folder); setFolderOpTarget(""); }}
+                          className="opacity-0 group-hover/folder:opacity-100 text-white/30 hover:text-white shrink-0 px-1"
+                          title="Move or merge folder"
+                        >⋯</button>
+                        <button
                           onClick={() => setRulesMenuFor(rulesMenuFor === folder ? null : folder)}
                           className="opacity-0 group-hover/folder:opacity-100 text-white/30 hover:text-white shrink-0 px-1"
                           title="Protection"
@@ -1029,6 +1054,53 @@ export default function LibraryPage() {
           </div> {/* end folder browser + clips grid flex */}
         </div>
       </div>
+
+      {/* Manage folder modal — move into / merge */}
+      {manageFolder && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={() => setManageFolder(null)}>
+          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold">Manage folder: <span className="text-orange-400">{manageFolder.split("/").pop()}</span></h3>
+              <button onClick={() => setManageFolder(null)} className="text-white/30 hover:text-white text-xl">✕</button>
+            </div>
+
+            {/* Move inside another folder */}
+            <div className="mb-5">
+              <p className="text-xs text-white/50 mb-2">📁 Move <span className="text-white">{manageFolder.split("/").pop()}</span> inside another folder (keeps its name):</p>
+              <select value={folderOpTarget} onChange={e => setFolderOpTarget(e.target.value)}
+                className="w-full bg-[#1a1a22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 mb-2">
+                <option value="">Choose new parent folder…</option>
+                <option value="__root__">(make it top-level)</option>
+                {driveFolders.filter(f => f !== manageFolder && !f.startsWith(manageFolder + "/")).map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <button
+                onClick={() => {
+                  const name = manageFolder.split("/").pop()!;
+                  const newPath = folderOpTarget === "__root__" ? name : `${folderOpTarget}/${name}`;
+                  runFolderOp(manageFolder, newPath, "Moved folder");
+                }}
+                disabled={!folderOpTarget || folderOpBusy}
+                className="w-full px-3 py-2 rounded-lg bg-orange-500/20 text-orange-300 border border-orange-500/30 text-sm hover:bg-orange-500/30 disabled:opacity-40"
+              >{folderOpBusy ? "Working…" : "Move here"}</button>
+            </div>
+
+            {/* Merge into another folder */}
+            <div className="border-t border-white/10 pt-4">
+              <p className="text-xs text-white/50 mb-2">🔗 Merge <span className="text-white">{manageFolder.split("/").pop()}</span> INTO another folder (combines clips, removes duplicate):</p>
+              <select value={folderOpTarget} onChange={e => setFolderOpTarget(e.target.value)}
+                className="w-full bg-[#1a1a22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500/50 mb-2">
+                <option value="">Choose folder to merge into…</option>
+                {driveFolders.filter(f => f !== manageFolder && !f.startsWith(manageFolder + "/")).map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <button
+                onClick={() => runFolderOp(manageFolder, folderOpTarget, "Merged folder")}
+                disabled={!folderOpTarget || folderOpTarget === "__root__" || folderOpBusy}
+                className="w-full px-3 py-2 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 text-sm hover:bg-purple-500/30 disabled:opacity-40"
+              >{folderOpBusy ? "Working…" : "Merge into selected"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bulk move action bar */}
       {selectedClipIds.size > 0 && (

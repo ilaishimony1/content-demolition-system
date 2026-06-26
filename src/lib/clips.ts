@@ -96,6 +96,39 @@ export async function applyOrganization(
   return written;
 }
 
+/**
+ * Move or merge a folder: re-path every clip under `oldPath` to `newPath`.
+ * - Move "swimming" into Sports → newPath "ספורט/swimming"
+ * - Merge duplicate "ספורט/ריצה" (typo) into the real one → same newPath, clips join it
+ * Writes organizedPath so the change is in-app and reversible. Returns count moved.
+ */
+export async function moveFolderClips(
+  clientId: string,
+  oldPath: string,
+  newPath: string
+): Promise<number> {
+  if (!oldPath || !newPath || oldPath === newPath) return 0;
+  const all = await getClipsByClient(clientId);
+  const updates: { id: string; path: string }[] = [];
+  for (const c of all) {
+    const eff = c.organizedPath || (c as Clip & { path?: string }).path || "";
+    let next: string | null = null;
+    if (eff === oldPath) next = newPath;
+    else if (eff.startsWith(oldPath + "/")) next = newPath + eff.slice(oldPath.length);
+    if (next && next !== eff && c.id) updates.push({ id: c.id, path: next });
+  }
+  const now = new Date().toISOString();
+  const BATCH = 400;
+  for (let i = 0; i < updates.length; i += BATCH) {
+    const batch = writeBatch(db);
+    for (const u of updates.slice(i, i + BATCH)) {
+      batch.update(doc(db, "clips", u.id), { organizedPath: u.path, organizedAt: now });
+    }
+    await batch.commit();
+  }
+  return updates.length;
+}
+
 // Get all clips for a client
 export async function getClipsByClient(clientId: string): Promise<Clip[]> {
   const q = query(collection(db, "clips"), where("clientId", "==", clientId));

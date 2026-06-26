@@ -456,15 +456,14 @@ export default function LibraryPage() {
   // Once a clip is moved to a folder (organizedPath set) it leaves the AI Library.
   const analysedClips = clips.filter(c => c.aiAnalysedAt && !c.organizedPath);
 
-  // Target folders an operator can move clips into (from taxonomy + existing Drive folders)
+  // Target folders an operator can move clips into — EVERY folder that exists:
+  // the full effective tree (incl. folders created by moves) + taxonomy folders.
   const moveTargets: string[] = (() => {
-    const set = new Set<string>();
+    const set = new Set<string>(driveFolders);
     for (const cat of (taxonomy?.categories || [])) {
       set.add(cat.name);
       for (const sub of cat.subcategories) set.add(`${cat.name}/${sub.name}`);
     }
-    // also allow moving into existing real Drive folders
-    for (const f of storedFolders) set.add(f);
     return Array.from(set).sort();
   })();
 

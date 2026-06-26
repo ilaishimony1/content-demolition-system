@@ -1042,7 +1042,6 @@ export default function LibraryPage() {
                       {/* AI tags */}
                       {clip.aiAnalysedAt && (
                         <div className="flex flex-wrap gap-1 mb-2">
-                          {clip.aiContentType && <span className="text-xs px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300">🤖 {clip.aiContentType}</span>}
                           {clip.aiEnergyLevel && <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">⚡ {clip.aiEnergyLevel}</span>}
                           {clip.aiHookQuality && <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300">🎣 {clip.aiHookQuality}</span>}
                           {clip.aiHasFace === "yes" && <span className="text-xs px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300">👤 face</span>}

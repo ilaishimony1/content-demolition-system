@@ -111,7 +111,9 @@ export default function LibraryPage() {
   }
 
   async function saveKeywords(folder: string, raw: string) {
-    const kws = raw.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    // Split on commas, spaces or newlines — each word is its own keyword, so it
+    // matches single-word AI tags (#bicycle, #cycling).
+    const kws = raw.split(/[\s,]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
     const next = await setFolderKeywords(selectedClient, folder, kws);
     setFolderKeywordsState(next);
   }

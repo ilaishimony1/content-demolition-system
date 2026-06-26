@@ -14,6 +14,81 @@
 import { Clip } from "@/lib/clips";
 import { ClientTaxonomy, TaxonomyCategory, TaxonomySubcategory } from "@/lib/taxonomy";
 import { FolderProtection, protectionForPath } from "@/lib/folderRules";
+import { FolderKeywords } from "@/lib/folderKeywords";
+
+export interface AutoMove {
+  clipId: string;
+  clip: Clip;
+  folder: string;       // destination folder path
+  matched: string;      // the keyword/tag that triggered it
+}
+
+export interface AutoSortResult {
+  moves: AutoMove[];
+  byFolder: Record<string, AutoMove[]>;
+  skippedAmbiguous: number;   // matched >1 folder — left for the operator
+  skippedNoMatch: number;     // matched 0 folders
+}
+
+/**
+ * Auto-sort the slam-dunks ONLY. A clip is moved automatically iff its tags
+ * point to EXACTLY ONE existing folder (via that folder's keywords or leaf name).
+ * Ambiguous (>1 folder) or no-match clips are left untouched for the operator.
+ * Never moves clips out of protected folders; never moves INTO a frozen folder.
+ */
+export function buildAutoSort(
+  clips: Clip[],
+  folderKeywords: FolderKeywords,
+  rules: Record<string, FolderProtection> = {}
+): AutoSortResult {
+  // Build keyword → folder lookup. Include each folder's leaf name as an implicit keyword.
+  const folderToTerms: { folder: string; terms: Set<string> }[] = [];
+  for (const [folder, kws] of Object.entries(folderKeywords)) {
+    if (protectionForPath(folder, rules) === "frozen") continue; // never auto-fill frozen
+    const terms = new Set<string>(kws.map(k => k.toLowerCase()));
+    terms.add(folder.split("/").pop()!.toLowerCase()); // the folder's own name
+    folderToTerms.push({ folder, terms });
+  }
+
+  const moves: AutoMove[] = [];
+  let skippedAmbiguous = 0;
+  let skippedNoMatch = 0;
+
+  for (const clip of clips) {
+    if (!clip.aiAnalysedAt || clip.organizedPath) continue; // only unsorted, scanned clips
+    const currentPath = (clip as Clip & { path?: string }).path || "";
+    if (protectionForPath(currentPath, rules) !== "managed") continue; // leave protected clips
+
+    // The clip's own terms: its AI tags (exact, reliable) + content type
+    const clipTerms = new Set<string>([
+      ...(clip.aiTags || []).map(t => t.toLowerCase()),
+      (clip.aiContentType || "").toLowerCase(),
+    ].filter(Boolean));
+
+    // Which folders does this clip match?
+    const hits: { folder: string; matched: string }[] = [];
+    for (const { folder, terms } of folderToTerms) {
+      let matched = "";
+      for (const t of terms) {
+        if (clipTerms.has(t)) { matched = t; break; }
+      }
+      if (matched) hits.push({ folder, matched });
+    }
+
+    if (hits.length === 1) {
+      moves.push({ clipId: clip.id!, clip, folder: hits[0].folder, matched: hits[0].matched });
+    } else if (hits.length > 1) {
+      skippedAmbiguous++;
+    } else {
+      skippedNoMatch++;
+    }
+  }
+
+  const byFolder: Record<string, AutoMove[]> = {};
+  for (const m of moves) (byFolder[m.folder] ||= []).push(m);
+
+  return { moves, byFolder, skippedAmbiguous, skippedNoMatch };
+}
 
 export interface Assignment {
   clip: Clip;

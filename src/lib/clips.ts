@@ -129,6 +129,21 @@ export async function moveFolderClips(
   return updates.length;
 }
 
+// Undo an organization: clear organizedPath on these clips (back into the pile)
+export async function clearOrganization(clipIds: string[]): Promise<number> {
+  const BATCH = 400;
+  let n = 0;
+  for (let i = 0; i < clipIds.length; i += BATCH) {
+    const batch = writeBatch(db);
+    for (const id of clipIds.slice(i, i + BATCH)) {
+      batch.update(doc(db, "clips", id), { organizedPath: "" });
+      n++;
+    }
+    await batch.commit();
+  }
+  return n;
+}
+
 // Get all clips for a client
 export async function getClipsByClient(clientId: string): Promise<Clip[]> {
   const q = query(collection(db, "clips"), where("clientId", "==", clientId));

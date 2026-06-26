@@ -6,8 +6,10 @@ import Sidebar from "@/components/Sidebar";
 import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, applyOrganization, moveFolderClips, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
-import { buildSortPlan, SortPlan } from "@/lib/sorter";
+import { buildSortPlan, SortPlan, buildAutoSort, AutoSortResult } from "@/lib/sorter";
 import { getFolderRules, setFolderRule, protectionForPath, FolderProtection } from "@/lib/folderRules";
+import { getFolderKeywords, setFolderKeywords, FolderKeywords } from "@/lib/folderKeywords";
+import { clearOrganization } from "@/lib/clips";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -55,6 +57,11 @@ export default function LibraryPage() {
   const [manageFolder, setManageFolder] = useState<string | null>(null);
   const [folderOpTarget, setFolderOpTarget] = useState("");
   const [folderOpBusy, setFolderOpBusy] = useState(false);
+  const [folderKeywords, setFolderKeywordsState] = useState<FolderKeywords>({});
+  const [keywordDraft, setKeywordDraft] = useState("");
+  const [autoSortResult, setAutoSortResult] = useState<AutoSortResult | null>(null);
+  const [autoSortBatch, setAutoSortBatch] = useState<string[]>([]);
+  const [autoSortBusy, setAutoSortBusy] = useState(false);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -79,6 +86,7 @@ export default function LibraryPage() {
       loadTaxonomy();
       getDriveFolders(selectedClient).then(setStoredFolders);
       getFolderRules(selectedClient).then(setFolderRules);
+      getFolderKeywords(selectedClient).then(setFolderKeywordsState);
     }
   }, [selectedClient, user]);
 
@@ -99,6 +107,52 @@ export default function LibraryPage() {
       alert("Delete failed: " + String(err));
     } finally {
       setFolderOpBusy(false);
+    }
+  }
+
+  async function saveKeywords(folder: string, raw: string) {
+    const kws = raw.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+    const next = await setFolderKeywords(selectedClient, folder, kws);
+    setFolderKeywordsState(next);
+  }
+
+  async function runAutoSort() {
+    if (autoSortBusy) return;
+    if (Object.keys(folderKeywords).length === 0) {
+      alert("Add keywords to at least one folder first (folder ⋯ → Keywords). e.g. teach ריצה = running, jog.");
+      return;
+    }
+    setAutoSortBusy(true);
+    try {
+      const result = buildAutoSort(clips, folderKeywords, folderRules);
+      if (result.moves.length === 0) {
+        alert(`No confident matches found.\n\n${result.skippedAmbiguous} were ambiguous, ${result.skippedNoMatch} had no match — all left for you.`);
+        setAutoSortBusy(false);
+        return;
+      }
+      await applyOrganization(result.moves.map(m => ({ clipId: m.clipId, organizedPath: m.folder })));
+      setAutoSortBatch(result.moves.map(m => m.clipId));
+      setAutoSortResult(result);
+      await loadClips();
+    } catch (err) {
+      alert("Auto-sort failed: " + String(err));
+    } finally {
+      setAutoSortBusy(false);
+    }
+  }
+
+  async function undoAutoSort() {
+    if (autoSortBatch.length === 0) return;
+    setAutoSortBusy(true);
+    try {
+      await clearOrganization(autoSortBatch);
+      await loadClips();
+      setAutoSortResult(null);
+      setAutoSortBatch([]);
+    } catch (err) {
+      alert("Undo failed: " + String(err));
+    } finally {
+      setAutoSortBusy(false);
     }
   }
 
@@ -630,6 +684,19 @@ export default function LibraryPage() {
                 </div>
               </div>
             </button>
+            <button
+              onClick={runAutoSort}
+              disabled={autoSortBusy || clips.filter(c => c.aiAnalysedAt && !c.organizedPath).length === 0}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all disabled:opacity-40"
+            >
+              <span className="text-xl">✨</span>
+              <div className="text-left">
+                <div className="text-sm font-medium text-emerald-300">{autoSortBusy ? "Sorting…" : "Auto-sort sure clips"}</div>
+                <div className="text-xs text-white/40">
+                  {Object.keys(folderKeywords).length} folders taught
+                </div>
+              </div>
+            </button>
           </div>
 
           {/* View Toggle — Drive vs AI Library */}
@@ -1067,6 +1134,50 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      {/* Auto-sort result + undo */}
+      {autoSortResult && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6 w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-semibold flex items-center gap-2">✨ Auto-sorted {autoSortResult.moves.length} clips</h3>
+              <button onClick={() => { setAutoSortResult(null); setAutoSortBatch([]); }} className="text-white/30 hover:text-white text-xl">✕</button>
+            </div>
+            <p className="text-white/50 text-sm mb-4">
+              Only the certain matches were moved. <span className="text-yellow-300">{autoSortResult.skippedAmbiguous}</span> ambiguous and{" "}
+              <span className="text-white/60">{autoSortResult.skippedNoMatch}</span> unmatched were left in your pile. Scan the thumbnails — undo if anything looks wrong.
+            </p>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {Object.entries(autoSortResult.byFolder).sort((a, b) => b[1].length - a[1].length).map(([folder, items]) => (
+                <div key={folder} className="bg-white/5 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-emerald-300">📂 {folder}</span>
+                    <span className="text-xs text-white/40">{items.length} clips · matched “{items[0].matched}”</span>
+                  </div>
+                  <div className="flex gap-1.5 overflow-x-auto">
+                    {items.slice(0, 8).map(m => (
+                      <img key={m.clipId} src={m.clip.thumbnailUrl || m.clip.driveThumbnailUrl}
+                        alt="" className="w-14 h-14 object-cover rounded-md shrink-0"
+                        onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    ))}
+                    {items.length > 8 && <span className="text-xs text-white/30 self-center px-2">+{items.length - 8}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-4 pt-4 border-t border-white/10">
+              <button onClick={undoAutoSort} disabled={autoSortBusy}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-red-500/30 text-red-300 hover:bg-red-500/10 text-sm disabled:opacity-40">
+                {autoSortBusy ? "Undoing…" : "↩ Undo all"}
+              </button>
+              <button onClick={() => { setAutoSortResult(null); setAutoSortBatch([]); }}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-sm hover:bg-emerald-500/30">
+                Looks good — keep
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Manage folder modal — move into / merge */}
       {manageFolder && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={() => setManageFolder(null)}>
@@ -1074,6 +1185,21 @@ export default function LibraryPage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold">Manage folder: <span className="text-orange-400">{manageFolder.split("/").pop()}</span></h3>
               <button onClick={() => setManageFolder(null)} className="text-white/30 hover:text-white text-xl">✕</button>
+            </div>
+
+            {/* Keywords for auto-sort */}
+            <div className="mb-5 bg-purple-500/5 border border-purple-500/20 rounded-xl p-3">
+              <p className="text-xs text-purple-300 mb-1">🤖 Auto-sort keywords for <span className="font-medium">{manageFolder.split("/").pop()}</span></p>
+              <p className="text-[11px] text-white/40 mb-2">Comma-separated tag-words that mean this folder. e.g. running, jog, sprint, run</p>
+              <input
+                defaultValue={(folderKeywords[manageFolder] || []).join(", ")}
+                onBlur={e => saveKeywords(manageFolder, e.target.value)}
+                placeholder="running, jog, sprint…"
+                className="w-full bg-[#1a1a22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500/50"
+              />
+              {folderKeywords[manageFolder]?.length > 0 && (
+                <p className="text-[10px] text-purple-300/60 mt-1">✓ Auto-sort will file clips tagged with these here</p>
+              )}
             </div>
 
             {/* Move inside another folder */}

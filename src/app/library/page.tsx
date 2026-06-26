@@ -88,6 +88,20 @@ export default function LibraryPage() {
     setRulesMenuFor(null);
   }
 
+  async function deleteEmptyFolder(folder: string) {
+    setFolderOpBusy(true);
+    try {
+      const next = storedFolders.filter(f => f !== folder && !f.startsWith(folder + "/"));
+      await saveDriveFolders(selectedClient, next);
+      setStoredFolders(next);
+      setManageFolder(null);
+    } catch (err) {
+      alert("Delete failed: " + String(err));
+    } finally {
+      setFolderOpBusy(false);
+    }
+  }
+
   async function runFolderOp(oldPath: string, newPath: string, label: string) {
     if (!newPath || folderOpBusy) return;
     setFolderOpBusy(true);
@@ -1098,6 +1112,27 @@ export default function LibraryPage() {
                 className="w-full px-3 py-2 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 text-sm hover:bg-purple-500/30 disabled:opacity-40"
               >{folderOpBusy ? "Working…" : "Merge into selected"}</button>
             </div>
+
+            {/* Delete empty folder */}
+            {(() => {
+              const clipCount = clips.filter(c => {
+                const p = c.organizedPath || (c as Clip & { path?: string }).path || "";
+                return p === manageFolder || p.startsWith(manageFolder + "/");
+              }).length;
+              return (
+                <div className="border-t border-white/10 pt-4 mt-4">
+                  {clipCount === 0 ? (
+                    <button
+                      onClick={() => deleteEmptyFolder(manageFolder)}
+                      disabled={folderOpBusy}
+                      className="w-full px-3 py-2 rounded-lg bg-red-500/15 text-red-300 border border-red-500/30 text-sm hover:bg-red-500/25 disabled:opacity-40"
+                    >🗑️ Delete this empty folder</button>
+                  ) : (
+                    <p className="text-[11px] text-white/30 text-center">Folder has {clipCount} clips — empty it (move/merge) before deleting.</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

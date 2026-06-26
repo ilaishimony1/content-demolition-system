@@ -418,8 +418,9 @@ export default function LibraryPage() {
     return Array.from(all).sort();
   })();
 
-  // AI categories derived from analysed clips
-  const analysedClips = clips.filter(c => c.aiAnalysedAt);
+  // AI categories = analysed clips NOT yet filed into a folder (the sorting pile).
+  // Once a clip is moved to a folder (organizedPath set) it leaves the AI Library.
+  const analysedClips = clips.filter(c => c.aiAnalysedAt && !c.organizedPath);
 
   // Target folders an operator can move clips into (from taxonomy + existing Drive folders)
   const moveTargets: string[] = (() => {
@@ -467,6 +468,7 @@ export default function LibraryPage() {
 
     if (libraryView === "ai") {
       if (!clip.aiAnalysedAt) return false;
+      if (clip.organizedPath) return false; // filed into a folder → leaves the AI sorting pile
       if (!selectedAiCategory || selectedAiCategory === "all") return matchesSearch;
       if (selectedAiCategory.startsWith("type:")) return clip.aiContentType === selectedAiCategory.slice(5) && matchesSearch;
       if (selectedAiCategory === "face:yes") return (clip.aiHasFace === "yes" || clip.aiHasFace === "True") && matchesSearch;

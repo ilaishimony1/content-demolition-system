@@ -57,6 +57,7 @@ export default function LibraryPage() {
   const [autoSortResult, setAutoSortResult] = useState<AutoSortResult | null>(null);
   const [autoSortBatch, setAutoSortBatch] = useState<string[]>([]);
   const [autoSortBusy, setAutoSortBusy] = useState(false);
+  const [showTagManager, setShowTagManager] = useState(false);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -103,6 +104,20 @@ export default function LibraryPage() {
     } finally {
       setFolderOpBusy(false);
     }
+  }
+
+  // Add a tag as a keyword on a folder (the auto-sort vocabulary)
+  async function assignTagToFolder(tag: string, folder: string) {
+    const existing = folderKeywords[folder] || [];
+    if (existing.includes(tag)) return;
+    const next = await setFolderKeywords(selectedClient, folder, [...existing, tag]);
+    setFolderKeywordsState(next);
+  }
+
+  async function unassignTag(tag: string, folder: string) {
+    const existing = folderKeywords[folder] || [];
+    const next = await setFolderKeywords(selectedClient, folder, existing.filter(k => k !== tag));
+    setFolderKeywordsState(next);
   }
 
   async function saveKeywords(folder: string, raw: string) {
@@ -660,6 +675,17 @@ export default function LibraryPage() {
                 </div>
               </div>
             </button>
+            <button
+              onClick={() => setShowTagManager(true)}
+              disabled={analysedClips.length === 0}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all disabled:opacity-40"
+            >
+              <span className="text-xl">🏷️</span>
+              <div className="text-left">
+                <div className="text-sm font-medium text-amber-300">Tags → folders</div>
+                <div className="text-xs text-white/40">map the AI&apos;s actual words</div>
+              </div>
+            </button>
           </div>
 
           {/* View Toggle — Drive vs AI Library */}
@@ -1214,6 +1240,73 @@ export default function LibraryPage() {
           </div>
         </div>
       )}
+
+      {/* Tag Manager — map the AI's actual tags to folders */}
+      {showTagManager && (() => {
+        // Count every tag across analysed, unsorted clips
+        const counts: Record<string, number> = {};
+        for (const c of clips) {
+          if (!c.aiAnalysedAt || c.organizedPath) continue;
+          for (const t of (c.aiTags || [])) counts[t] = (counts[t] || 0) + 1;
+        }
+        // Reverse map: tag -> folder it's a keyword for
+        const tagToFolder: Record<string, string> = {};
+        for (const [folder, kws] of Object.entries(folderKeywords)) {
+          for (const k of kws) tagToFolder[k] = folder;
+        }
+        const tags = Object.entries(counts).sort((a, b) => {
+          const aM = !!tagToFolder[a[0]], bM = !!tagToFolder[b[0]];
+          if (aM !== bM) return aM ? 1 : -1;   // unmapped first
+          return b[1] - a[1];                   // then by frequency
+        });
+        const unmappedCount = tags.filter(([t]) => !tagToFolder[t]).length;
+        return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={() => setShowTagManager(false)}>
+          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-semibold flex items-center gap-2">🏷️ Tags → folders</h3>
+              <button onClick={() => setShowTagManager(false)} className="text-white/30 hover:text-white text-xl">✕</button>
+            </div>
+            <p className="text-white/50 text-sm mb-4">
+              Every tag the AI actually used on your un-sorted clips. Map a tag to a folder and auto-sort will file those clips there.
+              <span className="text-amber-300"> {unmappedCount} unmapped</span> (shown first).
+            </p>
+            <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+              {tags.length === 0 && <p className="text-white/30 text-sm">No tags yet — scan some clips first.</p>}
+              {tags.map(([tag, count]) => {
+                const mapped = tagToFolder[tag];
+                return (
+                  <div key={tag} className={`flex items-center gap-2 px-3 py-2 rounded-lg ${mapped ? "bg-emerald-500/5" : "bg-white/5"}`}>
+                    <span className="text-sm text-white/80 flex-1 truncate">#{tag}</span>
+                    <span className="text-xs text-white/30 shrink-0 w-14 text-right">{count} clip{count !== 1 ? "s" : ""}</span>
+                    {mapped ? (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs text-emerald-300 truncate max-w-[160px]" title={mapped}>→ {mapped.split("/").pop()}</span>
+                        <button onClick={() => unassignTag(tag, mapped)} className="text-white/30 hover:text-red-400 text-xs px-1" title="Unmap">✕</button>
+                      </div>
+                    ) : (
+                      <select
+                        defaultValue=""
+                        onChange={e => { if (e.target.value) assignTagToFolder(tag, e.target.value); }}
+                        className="bg-[#1a1a22] border border-white/10 rounded px-2 py-1 text-xs text-white outline-none focus:border-amber-500/40 shrink-0 max-w-[180px]"
+                      >
+                        <option value="">— assign to folder —</option>
+                        {driveFolders.map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/10 flex justify-end">
+              <button onClick={() => setShowTagManager(false)} className="px-4 py-2.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 text-sm hover:bg-amber-500/30">
+                Done — now run Auto-sort
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* Bulk move action bar */}
       {selectedClipIds.size > 0 && (

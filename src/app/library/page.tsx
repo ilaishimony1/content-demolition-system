@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, applyOrganization, moveFolderClips, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
-import { buildSortPlan, SortPlan, buildAutoSort, AutoSortResult } from "@/lib/sorter";
+import { buildAutoSort, AutoSortResult } from "@/lib/sorter";
 import { getFolderRules, setFolderRule, protectionForPath, FolderProtection } from "@/lib/folderRules";
 import { getFolderKeywords, setFolderKeywords, FolderKeywords } from "@/lib/folderKeywords";
 import { clearOrganization } from "@/lib/clips";
@@ -43,10 +43,6 @@ export default function LibraryPage() {
   const [editingCatName, setEditingCatName] = useState("");
   const [addingSubTo, setAddingSubTo] = useState<string | null>(null);
   const [newSubName, setNewSubName] = useState("");
-  const [sortPlan, setSortPlan] = useState<SortPlan | null>(null);
-  const [showSortPreview, setShowSortPreview] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [manualPlacements, setManualPlacements] = useState<Record<string, string>>({});
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set());
   const [bulkTarget, setBulkTarget] = useState("");
   const [bulkNewFolder, setBulkNewFolder] = useState(false);
@@ -58,7 +54,6 @@ export default function LibraryPage() {
   const [folderOpTarget, setFolderOpTarget] = useState("");
   const [folderOpBusy, setFolderOpBusy] = useState(false);
   const [folderKeywords, setFolderKeywordsState] = useState<FolderKeywords>({});
-  const [keywordDraft, setKeywordDraft] = useState("");
   const [autoSortResult, setAutoSortResult] = useState<AutoSortResult | null>(null);
   const [autoSortBatch, setAutoSortBatch] = useState<string[]>([]);
   const [autoSortBusy, setAutoSortBusy] = useState(false);
@@ -349,17 +344,6 @@ export default function LibraryPage() {
     setTaxonomy(updated);
   }
 
-  function handleOrganize() {
-    const analysed = clips.filter(c => c.aiAnalysedAt);
-    if (analysed.length === 0) return;
-    // Use existing taxonomy, or build a default from the AI labels
-    const labels = [...new Set(analysed.map(c => c.aiContentType).filter(Boolean))] as string[];
-    const tax = taxonomy || buildDefaultTaxonomy(selectedClient, labels);
-    const plan = buildSortPlan(analysed, tax, folderRules);
-    setSortPlan(plan);
-    setManualPlacements({});
-    setShowSortPreview(true);
-  }
 
   function toggleClipSelected(id: string) {
     setSelectedClipIds(prev => {
@@ -384,34 +368,6 @@ export default function LibraryPage() {
       alert("Move failed: " + String(err));
     } finally {
       setMovingBulk(false);
-    }
-  }
-
-  async function handleApplyOrganization() {
-    if (!sortPlan || applying) return;
-    setApplying(true);
-    try {
-      const placements: { clipId: string; organizedPath: string }[] = [];
-      // Confident placements
-      for (const a of sortPlan.assignments) {
-        if (a.needsReview || !a.clip.id) continue;
-        const path = a.subName ? `${a.categoryName}/${a.subName}` : a.categoryName;
-        placements.push({ clipId: a.clip.id, organizedPath: path });
-      }
-      // Manually-placed review clips (operator picked a folder)
-      for (const a of sortPlan.needsReview) {
-        if (!a.clip.id) continue;
-        const chosen = manualPlacements[a.clip.id];
-        if (chosen) placements.push({ clipId: a.clip.id, organizedPath: chosen });
-      }
-      const written = await applyOrganization(placements);
-      await loadClips();
-      setShowSortPreview(false);
-      alert(`✅ Organized ${written} clips in the app.\n\nReview them in the AI Library — nothing in Drive changed yet.`);
-    } catch (err) {
-      alert("Apply failed: " + String(err));
-    } finally {
-      setApplying(false);
     }
   }
 
@@ -670,19 +626,6 @@ export default function LibraryPage() {
                   {selectedDriveFolder
                     ? `${clips.filter(c => { const p = (c as Clip & {path?:string}).path||""; return (p===selectedDriveFolder||p.startsWith(selectedDriveFolder+"/")) && !c.aiAnalysedAt; }).length} unscanned in folder`
                     : `${managedUnanalysed} to scan${protectedUnanalysed > 0 ? ` · ${protectedUnanalysed} protected (skipped)` : ""}`}
-                </div>
-              </div>
-            </button>
-            <button
-              onClick={handleOrganize}
-              disabled={clips.filter(c => c.aiAnalysedAt).length === 0}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 transition-all disabled:opacity-40"
-            >
-              <span className="text-xl">🗂️</span>
-              <div className="text-left">
-                <div className="text-sm font-medium text-blue-300">Organize Drive</div>
-                <div className="text-xs text-white/40">
-                  {clips.filter(c => c.aiAnalysedAt).length} ready to sort
                 </div>
               </div>
             </button>
@@ -1301,118 +1244,6 @@ export default function LibraryPage() {
           <button onClick={() => { setSelectedClipIds(new Set()); setBulkNewFolder(false); }} className="text-white/40 hover:text-white text-lg px-1">✕</button>
         </div>
       )}
-
-      {/* Sort Preview Modal */}
-      {showSortPreview && sortPlan && (() => {
-        // All target folder paths the operator can place a review clip into
-        const targetFolders: string[] = [];
-        for (const cat of (taxonomy?.categories || [])) {
-          targetFolders.push(cat.name);
-          for (const sub of cat.subcategories) targetFolders.push(`${cat.name}/${sub.name}`);
-        }
-        const unplacedReview = sortPlan.needsReview.filter(a => a.clip.id && !manualPlacements[a.clip.id]).length;
-        return (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-lg font-semibold flex items-center gap-2">🗂️ Organize plan</h3>
-              <button onClick={() => setShowSortPreview(false)} className="text-white/30 hover:text-white text-xl">✕</button>
-            </div>
-            <p className="text-white/50 text-sm mb-4">
-              The agent is <span className="text-green-300">sure</span> about{" "}
-              <span className="text-green-300">{sortPlan.assignments.filter(a => !a.needsReview).length}</span> clips and{" "}
-              <span className="text-yellow-300">unsure</span> about{" "}
-              <span className="text-yellow-300">{sortPlan.needsReview.length}</span> — those are flagged for you to place.
-              Nothing moves in Drive yet.
-            </p>
-
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {/* Confident placements */}
-              {Object.entries(sortPlan.byFolder)
-                .sort((a, b) => b[1].length - a[1].length)
-                .map(([folder, items]) => (
-                  <div key={folder} className="bg-white/5 rounded-xl p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium flex items-center gap-2 text-white">
-                        ✅ 📂 {folder}
-                      </span>
-                      <span className="text-xs text-white/40">{items.length} clips</span>
-                    </div>
-                    <div className="text-xs text-white/30 mt-1 truncate">
-                      {items.slice(0, 4).map(i => i.clip.name).join(", ")}
-                      {items.length > 4 && ` +${items.length - 4} more`}
-                    </div>
-                  </div>
-                ))}
-
-              {/* Needs review — AI unsure */}
-              {sortPlan.needsReview.length > 0 && (
-                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-yellow-300 flex items-center gap-2">
-                      🔍 Needs your review
-                    </span>
-                    <span className="text-xs text-yellow-300/60">{sortPlan.needsReview.length} clips</span>
-                  </div>
-                  <div className="space-y-1 max-h-56 overflow-y-auto">
-                    {sortPlan.needsReview.slice(0, 50).map((a, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-xs bg-black/20 rounded-lg px-2 py-1.5">
-                        <span className="truncate text-white/70 flex-1">{a.clip.name}</span>
-                        <span className="text-yellow-300/40 shrink-0 text-[10px]">
-                          {a.categoryName === "Unsorted" ? "no match" : `${a.categoryName}?`}
-                        </span>
-                        <select
-                          value={a.clip.id ? (manualPlacements[a.clip.id] || "") : ""}
-                          onChange={e => a.clip.id && setManualPlacements(prev => ({ ...prev, [a.clip.id!]: e.target.value }))}
-                          className="bg-[#1a1a22] border border-white/10 rounded px-1.5 py-1 text-[11px] text-white outline-none focus:border-yellow-400/40 shrink-0 max-w-[140px]"
-                        >
-                          <option value="">— place in —</option>
-                          {targetFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                    {sortPlan.needsReview.length > 50 && (
-                      <p className="text-[10px] text-yellow-300/40 px-2 pt-1">+{sortPlan.needsReview.length - 50} more — apply these, then re-run to review the rest</p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {sortPlan.protectedCount > 0 && (
-              <p className="text-xs text-blue-300/70 mt-3">
-                🔒 {sortPlan.protectedCount} clips in protected folders left untouched.
-              </p>
-            )}
-
-            {unplacedReview > 0 && (
-              <p className="text-xs text-yellow-300/60 mt-3">
-                {unplacedReview} unsure clips still unplaced — they&apos;ll stay where they are unless you pick a folder.
-              </p>
-            )}
-
-            <div className="flex gap-3 mt-4 pt-4 border-t border-white/10">
-              <button
-                onClick={() => setShowSortPreview(false)}
-                className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-white/60 hover:bg-white/5 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleApplyOrganization}
-                disabled={applying}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-green-500/20 text-green-300 hover:bg-green-500/30 text-sm border border-green-500/30 disabled:opacity-50"
-              >
-                {applying ? "Organizing..." : "Apply organization (in app)"}
-              </button>
-            </div>
-            <p className="text-[10px] text-white/30 text-center mt-2">
-              Saves the layout in the app only. Pushing to real Drive is a separate confirmed step.
-            </p>
-          </div>
-        </div>
-        );
-      })()}
 
       {/* Drive Sync Modal */}
       {showDriveModal && (

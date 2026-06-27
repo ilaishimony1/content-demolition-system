@@ -153,6 +153,20 @@ export default function LibraryPage() {
     }
   }
 
+  // Send a single auto-sorted clip back to the pile (the rest stay filed)
+  async function undoOneAutoSort(clipId: string) {
+    await clearOrganization([clipId]);
+    await loadClips();
+    setAutoSortBatch(prev => prev.filter(id => id !== clipId));
+    setAutoSortResult(prev => {
+      if (!prev) return prev;
+      const moves = prev.moves.filter(m => m.clipId !== clipId);
+      const byFolder: typeof prev.byFolder = {};
+      for (const m of moves) (byFolder[m.folder] ||= []).push(m);
+      return { ...prev, moves, byFolder };
+    });
+  }
+
   async function runFolderOp(oldPath: string, newPath: string, label: string) {
     if (!newPath || folderOpBusy) return;
     setFolderOpBusy(true);
@@ -1099,7 +1113,7 @@ export default function LibraryPage() {
             </div>
             <p className="text-white/50 text-sm mb-4">
               Only the certain matches were moved. <span className="text-yellow-300">{autoSortResult.skippedAmbiguous}</span> ambiguous and{" "}
-              <span className="text-white/60">{autoSortResult.skippedNoMatch}</span> unmatched were left in your pile. Scan the thumbnails — undo if anything looks wrong.
+              <span className="text-white/60">{autoSortResult.skippedNoMatch}</span> unmatched were left in your pile. Hover any thumbnail and click ✕ to send just that one back — the rest stay filed.
             </p>
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {Object.entries(autoSortResult.byFolder).sort((a, b) => b[1].length - a[1].length).map(([folder, items]) => (
@@ -1108,13 +1122,20 @@ export default function LibraryPage() {
                     <span className="text-sm font-medium text-emerald-300">📂 {folder}</span>
                     <span className="text-xs text-white/40">{items.length} clips · matched “{items[0].matched}”</span>
                   </div>
-                  <div className="flex gap-1.5 overflow-x-auto">
-                    {items.slice(0, 8).map(m => (
-                      <img key={m.clipId} src={m.clip.thumbnailUrl || m.clip.driveThumbnailUrl}
-                        alt="" className="w-14 h-14 object-cover rounded-md shrink-0"
-                        onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  <div className="flex flex-wrap gap-2">
+                    {items.map(m => (
+                      <div key={m.clipId} className="relative group/thumb">
+                        <img src={m.clip.thumbnailUrl || m.clip.driveThumbnailUrl}
+                          alt={m.clip.name} title={m.clip.name}
+                          className="w-16 h-16 object-cover rounded-md"
+                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        <button
+                          onClick={() => undoOneAutoSort(m.clipId)}
+                          title="Wrong — send back to pile"
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-all shadow"
+                        >✕</button>
+                      </div>
                     ))}
-                    {items.length > 8 && <span className="text-xs text-white/30 self-center px-2">+{items.length - 8}</span>}
                   </div>
                 </div>
               ))}

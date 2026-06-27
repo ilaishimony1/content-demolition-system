@@ -1255,15 +1255,14 @@ export default function LibraryPage() {
 
       {/* Push to Drive — preview of real-Drive moves (read-only for now) */}
       {showPushPreview && (() => {
-        // A clip needs moving if its organized location differs from its real Drive path,
-        // and it isn't sitting in (or headed into) a protected folder.
+        // Push mirrors your in-app structure EXACTLY: every clip you placed
+        // (organizedPath) that differs from its real Drive path moves — including
+        // clips you manually added to tomcore / חיה. Protections only governed the
+        // auto-sort agent, not your own deliberate placements.
         const moves = clips.filter(c => {
           const real = (c as Clip & { path?: string }).path || "";
           const target = c.organizedPath || "";
-          if (!target || target === real) return false;
-          if (protectionForPath(real, folderRules) !== "managed") return false; // don't move protected sources
-          if (protectionForPath(target, folderRules) === "frozen") return false; // never push into frozen
-          return true;
+          return !!target && target !== real;
         });
         const byDest: Record<string, Clip[]> = {};
         for (const c of moves) (byDest[c.organizedPath!] ||= []).push(c);
@@ -1282,7 +1281,7 @@ export default function LibraryPage() {
               {newFolders.length > 0 && <> ({newFolders.length} new folders created)</>}.
             </p>
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 text-xs text-blue-300 mb-4">
-              🔒 Protected folders (tomcore, חיה…) are never touched. Files only move — nothing is deleted.
+              ✅ Mirrors your in-app layout exactly — including clips you manually placed in tomcore / חיה. Files only move (re-parent) — nothing is ever deleted.
             </div>
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {moves.length === 0 && <p className="text-white/30 text-sm">Nothing to push — your in-app structure already matches Drive.</p>}

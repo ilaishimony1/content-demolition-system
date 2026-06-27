@@ -515,9 +515,6 @@ export default function LibraryPage() {
       count: analysedClips.filter(c => c.aiContentType === ct).length,
     })),
     { id: "face:yes", label: "Has face", emoji: "👤", count: analysedClips.filter(c => c.aiHasFace === "yes" || c.aiHasFace === "True").length },
-    { id: "energy:high", label: "High energy", emoji: "🔥", count: analysedClips.filter(c => c.aiEnergyLevel === "high").length },
-    { id: "energy:low", label: "Calm / low energy", emoji: "🌊", count: analysedClips.filter(c => c.aiEnergyLevel === "low").length },
-    { id: "score:top", label: "Top rated (8+)", emoji: "★", count: analysedClips.filter(c => parseFloat(c.aiUsabilityScore || "0") >= 8).length },
   ].filter(cat => cat.count > 0);
 
   const filteredClips = clips.filter((clip) => {
@@ -541,9 +538,6 @@ export default function LibraryPage() {
       if (!selectedAiCategory || selectedAiCategory === "all") return matchesSearch;
       if (selectedAiCategory.startsWith("type:")) return clip.aiContentType === selectedAiCategory.slice(5) && matchesSearch;
       if (selectedAiCategory === "face:yes") return (clip.aiHasFace === "yes" || clip.aiHasFace === "True") && matchesSearch;
-      if (selectedAiCategory === "energy:high") return clip.aiEnergyLevel === "high" && matchesSearch;
-      if (selectedAiCategory === "energy:low") return clip.aiEnergyLevel === "low" && matchesSearch;
-      if (selectedAiCategory === "score:top") return parseFloat(clip.aiUsabilityScore || "0") >= 8 && matchesSearch;
       // Subcategory filter — match by keyword hints in clip topic/notes
       if (selectedAiCategory.startsWith("sub:")) {
         const subId = selectedAiCategory.slice(4);
@@ -998,17 +992,10 @@ export default function LibraryPage() {
                   </button>
                 )}
                 {libraryView === "ai" && (
-                  <span className="text-xs text-purple-400/60 bg-purple-500/10 px-2 py-1 rounded-lg">🤖 sorted by usability</span>
+                  <span className="text-xs text-purple-400/60 bg-purple-500/10 px-2 py-1 rounded-lg">🤖 AI tagged</span>
                 )}
               </div>
             </div>
-
-            {(() => {
-              if (libraryView === "ai") {
-                filteredClips.sort((a, b) => parseFloat(b.aiUsabilityScore || "0") - parseFloat(a.aiUsabilityScore || "0"));
-              }
-              return null;
-            })()}
             {filteredClips.length === 0 ? (
               <div className="text-center py-16 text-white/30">
                 <div className="text-4xl mb-3">🎬</div>
@@ -1075,15 +1062,6 @@ export default function LibraryPage() {
                           <span className="text-xs text-white/20">No tags yet</span>
                         )}
                       </div>
-                      {/* AI tags */}
-                      {clip.aiAnalysedAt && (
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {clip.aiEnergyLevel && <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">⚡ {clip.aiEnergyLevel}</span>}
-                          {clip.aiHookQuality && <span className="text-xs px-1.5 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300">🎣 {clip.aiHookQuality}</span>}
-                          {clip.aiHasFace === "yes" && <span className="text-xs px-1.5 py-0.5 rounded-full bg-pink-500/20 text-pink-300">👤 face</span>}
-                          {clip.aiUsabilityScore && <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-300">★ {clip.aiUsabilityScore}/10</span>}
-                        </div>
-                      )}
                       {/* Activity/subject multi-tags */}
                       {clip.aiTags && clip.aiTags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mb-2">

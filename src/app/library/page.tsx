@@ -9,7 +9,7 @@ import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from 
 import { buildAutoSort, AutoSortResult } from "@/lib/sorter";
 import { getFolderRules, setFolderRule, protectionForPath, FolderProtection } from "@/lib/folderRules";
 import { getFolderKeywords, setFolderKeywords, FolderKeywords } from "@/lib/folderKeywords";
-import { clearOrganization } from "@/lib/clips";
+import { clearOrganization, getScanStatus } from "@/lib/clips";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -427,14 +427,24 @@ export default function LibraryPage() {
         const fresh = await getClipsByClient(selectedClient);
         setClips(fresh);
         const done = fresh.filter(c => c.aiAnalysedAt && inScope(c)).length - baseline;
-        setAiScanStatus(`🤖 Scanned ${Math.max(0, done)} / ${toScan}…`);
-        if (done >= toScan || polls >= maxPolls) {
+        // Read worker scan status for errors (so a silent stall is visible)
+        const st = await getScanStatus(selectedClient);
+        const errs = st?.errors ?? 0;
+        if (errs > 0 && (done === 0)) {
+          setAiScanStatus(`⚠️ ${errs} clips failed to scan. Last error: ${st?.lastError || "unknown"}`);
+        } else if (errs > 0) {
+          setAiScanStatus(`🤖 Scanned ${Math.max(0, done)} / ${toScan} · ${errs} failed (last: ${(st?.lastError || "").slice(0, 60)})`);
+        } else {
+          setAiScanStatus(`🤖 Scanned ${Math.max(0, done)} / ${toScan}…`);
+        }
+        const workerDone = st && st.running === false && (st.done ?? 0) + (st.errors ?? 0) >= (st.total ?? 0);
+        if (done >= toScan || workerDone || polls >= maxPolls) {
           clearInterval(poll);
           setAiScanning(false);
-          setAiScanStatus(`✅ Scan finished — ${Math.max(0, done)} clips tagged.`);
+          setAiScanStatus(`✅ Scan finished — ${Math.max(0, done)} tagged${errs ? `, ${errs} failed (${(st?.lastError || "").slice(0, 80)})` : ""}.`);
           await updateAgentMemory(selectedClient, { lastScanAt: new Date().toISOString() });
           await logAgentEvent(selectedClient, { agent: "drive-scanner", type: "scan-complete", payload: { scanned: done } });
-          setTimeout(() => setAiScanStatus(""), 8000);
+          setTimeout(() => setAiScanStatus(""), 12000);
         }
       }, 12000);
     } catch (err) {

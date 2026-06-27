@@ -12,6 +12,20 @@ export async function getDriveFolders(clientId: string): Promise<string[]> {
   return snap.exists() ? (snap.data().folders as string[]) || [] : [];
 }
 
+export interface ScanStatus {
+  running?: boolean;
+  total?: number;
+  done?: number;
+  errors?: number;
+  lastError?: string;
+  updatedAt?: string;
+}
+
+export async function getScanStatus(clientId: string): Promise<ScanStatus | null> {
+  const snap = await getDoc(doc(db, "scanStatus", clientId));
+  return snap.exists() ? (snap.data() as ScanStatus) : null;
+}
+
 export interface SyncResult {
   added: number;
   updated: number;

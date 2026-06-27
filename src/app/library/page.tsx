@@ -58,6 +58,7 @@ export default function LibraryPage() {
   const [autoSortBatch, setAutoSortBatch] = useState<string[]>([]);
   const [autoSortBusy, setAutoSortBusy] = useState(false);
   const [showTagManager, setShowTagManager] = useState(false);
+  const [showPushPreview, setShowPushPreview] = useState(false);
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -686,6 +687,17 @@ export default function LibraryPage() {
                 <div className="text-xs text-white/40">map the AI&apos;s actual words</div>
               </div>
             </button>
+            <button
+              onClick={() => setShowPushPreview(true)}
+              disabled={clips.filter(c => c.organizedPath).length === 0}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl border border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 transition-all disabled:opacity-40"
+            >
+              <span className="text-xl">🚀</span>
+              <div className="text-left">
+                <div className="text-sm font-medium text-orange-300">Push to Drive</div>
+                <div className="text-xs text-white/40">{clips.filter(c => c.organizedPath).length} organized</div>
+              </div>
+            </button>
           </div>
 
           {/* View Toggle — Drive vs AI Library */}
@@ -1240,6 +1252,66 @@ export default function LibraryPage() {
           </div>
         </div>
       )}
+
+      {/* Push to Drive — preview of real-Drive moves (read-only for now) */}
+      {showPushPreview && (() => {
+        // A clip needs moving if its organized location differs from its real Drive path,
+        // and it isn't sitting in (or headed into) a protected folder.
+        const moves = clips.filter(c => {
+          const real = (c as Clip & { path?: string }).path || "";
+          const target = c.organizedPath || "";
+          if (!target || target === real) return false;
+          if (protectionForPath(real, folderRules) !== "managed") return false; // don't move protected sources
+          if (protectionForPath(target, folderRules) === "frozen") return false; // never push into frozen
+          return true;
+        });
+        const byDest: Record<string, Clip[]> = {};
+        for (const c of moves) (byDest[c.organizedPath!] ||= []).push(c);
+        const newFolders = Object.keys(byDest).filter(f => !storedFolders.includes(f));
+        return (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={() => setShowPushPreview(false)}>
+          <div className="bg-[#111118] border border-white/10 rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-semibold flex items-center gap-2">🚀 Push to Drive — preview</h3>
+              <button onClick={() => setShowPushPreview(false)} className="text-white/30 hover:text-white text-xl">✕</button>
+            </div>
+            <p className="text-white/50 text-sm mb-4">
+              This is what will happen in <span className="text-white">{currentClient?.name}</span>&apos;s <span className="text-orange-300">real Google Drive</span> when you push:
+              <span className="text-orange-300"> {moves.length} files</span> moved into{" "}
+              <span className="text-orange-300">{Object.keys(byDest).length} folders</span>
+              {newFolders.length > 0 && <> ({newFolders.length} new folders created)</>}.
+            </p>
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2 text-xs text-blue-300 mb-4">
+              🔒 Protected folders (tomcore, חיה…) are never touched. Files only move — nothing is deleted.
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {moves.length === 0 && <p className="text-white/30 text-sm">Nothing to push — your in-app structure already matches Drive.</p>}
+              {Object.entries(byDest).sort((a, b) => b[1].length - a[1].length).map(([dest, items]) => (
+                <div key={dest} className="bg-white/5 rounded-xl p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-white flex items-center gap-2">
+                      📂 {dest} {!storedFolders.includes(dest) && <span className="text-[10px] text-emerald-400">NEW</span>}
+                    </span>
+                    <span className="text-xs text-white/40">{items.length} files</span>
+                  </div>
+                  <div className="text-xs text-white/30 mt-1 truncate">{items.slice(0, 5).map(i => i.name).join(", ")}{items.length > 5 && ` +${items.length - 5}`}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <p className="text-xs text-amber-300/80 mb-3">
+                ⚠️ This is preview-only. To actually move files, the app needs <b>write</b> access to Drive (you currently granted read-only).
+                Next step: re-connect Google to grant write permission, then this becomes a confirmed &quot;Execute push&quot;.
+              </p>
+              <div className="flex gap-3">
+                <button onClick={() => setShowPushPreview(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-white/60 hover:bg-white/5 text-sm">Close</button>
+                <button disabled title="Coming next — needs Drive write permission" className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500/20 text-orange-300/50 border border-orange-500/20 text-sm cursor-not-allowed">Execute push (next step)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* Tag Manager — map the AI's actual tags to folders */}
       {showTagManager && (() => {

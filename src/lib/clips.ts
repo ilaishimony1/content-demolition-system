@@ -26,6 +26,11 @@ export async function getScanStatus(clientId: string): Promise<ScanStatus | null
   return snap.exists() ? (snap.data() as ScanStatus) : null;
 }
 
+export async function getPushStatus(clientId: string): Promise<ScanStatus | null> {
+  const snap = await getDoc(doc(db, "pushStatus", clientId));
+  return snap.exists() ? (snap.data() as ScanStatus) : null;
+}
+
 export interface SyncResult {
   added: number;
   updated: number;

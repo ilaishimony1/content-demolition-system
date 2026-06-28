@@ -9,7 +9,7 @@ import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from 
 import { buildAutoSort, AutoSortResult } from "@/lib/sorter";
 import { getFolderRules, setFolderRule, protectionForPath, FolderProtection } from "@/lib/folderRules";
 import { getFolderKeywords, setFolderKeywords, FolderKeywords } from "@/lib/folderKeywords";
-import { clearOrganization, getScanStatus } from "@/lib/clips";
+import { clearOrganization, getScanStatus, getPushStatus } from "@/lib/clips";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -59,6 +59,9 @@ export default function LibraryPage() {
   const [autoSortBusy, setAutoSortBusy] = useState(false);
   const [showTagManager, setShowTagManager] = useState(false);
   const [showPushPreview, setShowPushPreview] = useState(false);
+  const [pushRootFolder, setPushRootFolder] = useState("");
+  const [pushing, setPushing] = useState(false);
+  const [pushStatusText, setPushStatusText] = useState("");
   const [aiScanning, setAiScanning] = useState(false);
   const [aiScanStatus, setAiScanStatus] = useState("");
   const [showDriveModal, setShowDriveModal] = useState(false);
@@ -104,6 +107,52 @@ export default function LibraryPage() {
       alert("Delete failed: " + String(err));
     } finally {
       setFolderOpBusy(false);
+    }
+  }
+
+  async function executePush() {
+    if (pushing) return;
+    if (!session?.accessToken) { await signIn("google"); return; }
+    const rootMatch = pushRootFolder.match(/folders\/([a-zA-Z0-9_-]+)/);
+    const rootId = (rootMatch ? rootMatch[1] : pushRootFolder).trim();
+    if (!rootId) { alert("Paste the root Drive folder (the one you imported from) first."); return; }
+
+    const moves = clips
+      .filter(c => c.organizedPath && c.organizedPath !== ((c as Clip & { path?: string }).path || "") && c.driveFileId)
+      .map(c => ({ drive_file_id: c.driveFileId, target_path: c.organizedPath, name: c.name }));
+    if (moves.length === 0) { alert("Nothing to push."); return; }
+
+    if (!confirm(`Move ${moves.length} files in ${currentClient?.name}'s real Google Drive to match your in-app layout?\n\nFiles are only moved (never deleted). This can't be auto-undone, but you can always re-organize and push again.`)) return;
+
+    setPushing(true);
+    setPushStatusText(`🚀 Pushing ${moves.length} files to Drive…`);
+    try {
+      const res = await fetch("/api/agent/push-to-drive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: selectedClient, accessToken: session.accessToken, rootFolderId: rootId, moves }),
+      });
+      const data = await res.json();
+      if (data.error) { setPushStatusText("❌ " + data.error); setPushing(false); return; }
+      const total = data.to_move ?? moves.length;
+      let polls = 0;
+      const poll = setInterval(async () => {
+        polls++;
+        const st = await getPushStatus(selectedClient);
+        const done = st?.done ?? 0, errs = st?.errors ?? 0;
+        setPushStatusText(`🚀 Moved ${done} / ${total}${errs ? ` · ${errs} failed (${(st?.lastError || "").slice(0, 50)})` : ""}…`);
+        const finished = (st && st.running === false && (done + errs) >= (st.total ?? total)) || polls > total * 3 + 20;
+        if (finished) {
+          clearInterval(poll);
+          setPushing(false);
+          setPushStatusText(`✅ Pushed to Drive — ${done} moved${errs ? `, ${errs} failed` : ""}. Tom's Drive now matches your layout! 🎉`);
+          await logAgentEvent(selectedClient, { agent: "drive-scanner", type: "push-complete", payload: { moved: done, errors: errs } });
+          setTimeout(() => { setPushStatusText(""); setShowPushPreview(false); }, 10000);
+        }
+      }, 4000);
+    } catch (err) {
+      setPushStatusText("Push failed: " + String(err));
+      setPushing(false);
     }
   }
 
@@ -1298,13 +1347,31 @@ export default function LibraryPage() {
               ))}
             </div>
             <div className="mt-4 pt-4 border-t border-white/10">
-              <p className="text-xs text-amber-300/80 mb-3">
-                ⚠️ This is preview-only. To actually move files, the app needs <b>write</b> access to Drive (you currently granted read-only).
-                Next step: re-connect Google to grant write permission, then this becomes a confirmed &quot;Execute push&quot;.
+              <p className="text-xs text-white/50 mb-2">
+                Paste the <b className="text-white/70">root Drive folder</b> you imported from (where Tom&apos;s folders live):
               </p>
+              <input
+                value={pushRootFolder}
+                onChange={e => setPushRootFolder(e.target.value)}
+                placeholder="drive.google.com/drive/folders/… (or just the ID)"
+                className="w-full bg-[#1a1a22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 mb-2"
+              />
+              <p className="text-[11px] text-amber-300/70 mb-3">
+                ⚠️ Needs <b>write</b> access to Drive. If it fails with a permission error, sign out & back in with Google to grant write, then push again. Files only move — never deleted.
+              </p>
+              {pushStatusText && (
+                <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2 text-sm text-orange-300 mb-3 flex items-center gap-2">
+                  {pushing && <div className="w-3.5 h-3.5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />}
+                  {pushStatusText}
+                </div>
+              )}
               <div className="flex gap-3">
                 <button onClick={() => setShowPushPreview(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-white/10 text-white/60 hover:bg-white/5 text-sm">Close</button>
-                <button disabled title="Coming next — needs Drive write permission" className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500/20 text-orange-300/50 border border-orange-500/20 text-sm cursor-not-allowed">Execute push (next step)</button>
+                <button
+                  onClick={executePush}
+                  disabled={pushing || moves.length === 0 || !pushRootFolder.trim()}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 text-white font-medium text-sm hover:bg-orange-600 disabled:opacity-40"
+                >{pushing ? "Pushing…" : `🚀 Execute push (${moves.length})`}</button>
               </div>
             </div>
           </div>

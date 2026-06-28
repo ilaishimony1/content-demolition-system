@@ -1356,9 +1356,15 @@ export default function LibraryPage() {
                 placeholder="drive.google.com/drive/folders/… (or just the ID)"
                 className="w-full bg-[#1a1a22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 mb-2"
               />
-              <p className="text-[11px] text-amber-300/70 mb-3">
-                ⚠️ Needs <b>write</b> access to Drive. If it fails with a permission error, sign out & back in with Google to grant write, then push again. Files only move — never deleted.
-              </p>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <p className="text-[11px] text-amber-300/70">
+                  ⚠️ Needs <b>write</b> access. First time: click Reconnect → approve (incl. &quot;See, edit… your Drive files&quot;). Files only move, never deleted.
+                </p>
+                <button
+                  onClick={() => signIn("google")}
+                  className="shrink-0 text-[11px] px-2 py-1.5 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                >🔑 Reconnect (grant write)</button>
+              </div>
               {pushStatusText && (
                 <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2 text-sm text-orange-300 mb-3 flex items-center gap-2">
                   {pushing && <div className="w-3.5 h-3.5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />}

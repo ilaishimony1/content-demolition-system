@@ -49,10 +49,11 @@ const handler = NextAuth({
   ],
   callbacks: {
     async jwt({ token, account }) {
-      // Initial sign-in — persist tokens + expiry
+      // Initial sign-in — persist tokens + expiry + granted scopes
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
+        token.scope = account.scope;
         token.accessTokenExpires = account.expires_at
           ? account.expires_at * 1000
           : Date.now() + 3600 * 1000;
@@ -69,7 +70,8 @@ const handler = NextAuth({
     },
     async session({ session, token }) {
       session.accessToken = token.accessToken as string;
-      (session as { error?: string }).error = token.error as string | undefined;
+      (session as { error?: string; scope?: string }).error = token.error as string | undefined;
+      (session as { scope?: string }).scope = token.scope as string | undefined;
       return session;
     },
   },

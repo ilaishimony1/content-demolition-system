@@ -1356,15 +1356,23 @@ export default function LibraryPage() {
                 placeholder="drive.google.com/drive/folders/… (or just the ID)"
                 className="w-full bg-[#1a1a22] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50 mb-2"
               />
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <p className="text-[11px] text-amber-300/70">
-                  ⚠️ Needs <b>write</b> access. First time: click Reconnect → approve (incl. &quot;See, edit… your Drive files&quot;). Files only move, never deleted.
-                </p>
-                <button
-                  onClick={() => signIn("google")}
-                  className="shrink-0 text-[11px] px-2 py-1.5 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
-                >🔑 Reconnect (grant write)</button>
-              </div>
+              {(() => {
+                const scope = (session as { scope?: string } | null)?.scope || "";
+                const hasWrite = scope.includes("auth/drive") && !scope.includes("drive.readonly");
+                return (
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    {hasWrite ? (
+                      <p className="text-[11px] text-emerald-300/90">✅ <b>Drive write connected</b> — ready to push. Files only move, never deleted.</p>
+                    ) : (
+                      <p className="text-[11px] text-amber-300/70">⚠️ Needs <b>write</b> access. Click Reconnect → approve (incl. &quot;edit your Drive files&quot;).</p>
+                    )}
+                    <button
+                      onClick={() => signIn("google")}
+                      className={`shrink-0 text-[11px] px-2 py-1.5 rounded-lg border ${hasWrite ? "border-emerald-500/30 text-emerald-300/70" : "border-blue-500/30 text-blue-300 hover:bg-blue-500/10"}`}
+                    >{hasWrite ? "✓ Connected" : "🔑 Reconnect (grant write)"}</button>
+                  </div>
+                );
+              })()}
               {pushStatusText && (
                 <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2 text-sm text-orange-300 mb-3 flex items-center gap-2">
                   {pushing && <div className="w-3.5 h-3.5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />}

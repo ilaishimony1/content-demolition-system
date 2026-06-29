@@ -12,6 +12,16 @@ export async function getDriveFolders(clientId: string): Promise<string[]> {
   return snap.exists() ? (snap.data().folders as string[]) || [] : [];
 }
 
+// Remember the client's root Drive folder so the app can auto-sync from it
+export async function saveDriveRoot(clientId: string, rootFolderId: string): Promise<void> {
+  await setDoc(doc(db, "driveConfig", clientId), { rootFolderId, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export async function getDriveRoot(clientId: string): Promise<string | null> {
+  const snap = await getDoc(doc(db, "driveConfig", clientId));
+  return snap.exists() ? (snap.data().rootFolderId as string) || null : null;
+}
+
 export interface ScanStatus {
   running?: boolean;
   total?: number;

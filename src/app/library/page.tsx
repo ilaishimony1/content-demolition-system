@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, applyOrganization, moveFolderClips, Clip } from "@/lib/clips";
+import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, saveDriveRoot, getDriveRoot, applyOrganization, moveFolderClips, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildAutoSort, AutoSortResult } from "@/lib/sorter";
@@ -36,6 +36,8 @@ export default function LibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
+  const autoSyncedRef = useRef<Set<string>>(new Set());
   const [libraryView, setLibraryView] = useState<"drive" | "ai">("drive");
   const [selectedAiCategory, setSelectedAiCategory] = useState<string | null>(null);
   const [taxonomy, setTaxonomy] = useState<ClientTaxonomy | null>(null);
@@ -87,8 +89,33 @@ export default function LibraryPage() {
       getDriveFolders(selectedClient).then(setStoredFolders);
       getFolderRules(selectedClient).then(setFolderRules);
       getFolderKeywords(selectedClient).then(setFolderKeywordsState);
+      maybeAutoSync(selectedClient);
     }
-  }, [selectedClient, user]);
+  }, [selectedClient, user, session?.accessToken]);
+
+  // Silently pull new Drive files when you open a client (once per session per client)
+  async function maybeAutoSync(clientId: string) {
+    if (!session?.accessToken) return;
+    if (autoSyncedRef.current.has(clientId)) return;
+    const root = await getDriveRoot(clientId);
+    if (!root) return; // no remembered root yet — manual Import sets it up
+    autoSyncedRef.current.add(clientId);
+    setAutoSyncing(true);
+    try {
+      const res = await fetch("/api/drive-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: session.accessToken, folderId: root, clientId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await upsertClipsByDriveId(clientId, data.clips);
+        if (data.folders) { await saveDriveFolders(clientId, data.folders); setStoredFolders(data.folders); }
+        if (clientId === selectedClient) await loadClips();
+      }
+    } catch { /* silent — manual Import always available */ }
+    finally { setAutoSyncing(false); }
+  }
 
   async function changeFolderRule(folder: string, level: FolderProtection) {
     const next = await setFolderRule(selectedClient, folder, level);
@@ -134,6 +161,7 @@ export default function LibraryPage() {
       });
       const data = await res.json();
       if (data.error) { setPushStatusText("❌ " + data.error); setPushing(false); return; }
+      await saveDriveRoot(selectedClient, rootId); // remember root for auto-sync
       const total = data.to_move ?? moves.length;
       let polls = 0;
       const poll = setInterval(async () => {
@@ -340,6 +368,8 @@ export default function LibraryPage() {
         setUploadProgress(`Syncing ${data.count} clips (matching existing)...`);
         // Upsert by Drive file ID — no duplicates, AI tags preserved
         const result = await upsertClipsByDriveId(selectedClient, data.clips);
+        // Remember the root so the app can auto-sync from it on open
+        await saveDriveRoot(selectedClient, cleanFolderId);
         // Persist the full folder structure (incl. empty folders like בלאגן)
         if (data.folders) {
           await saveDriveFolders(selectedClient, data.folders);
@@ -818,6 +848,14 @@ export default function LibraryPage() {
             <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex items-center gap-3">
               <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
               <p className="text-sm text-orange-300">{uploadProgress}</p>
+            </div>
+          )}
+
+          {/* Auto-sync indicator */}
+          {autoSyncing && (
+            <div className="flex items-center gap-2 text-xs text-white/40">
+              <div className="w-3 h-3 border-2 border-white/30 border-t-transparent rounded-full animate-spin" />
+              Syncing with Drive…
             </div>
           )}
 

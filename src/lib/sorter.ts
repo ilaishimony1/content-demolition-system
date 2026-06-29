@@ -59,18 +59,35 @@ export function buildAutoSort(
     const currentPath = (clip as Clip & { path?: string }).path || "";
     if (protectionForPath(currentPath, rules) !== "managed") continue; // leave protected clips
 
-    // The clip's own terms: its AI tags (exact, reliable) + content type
-    const clipTerms = new Set<string>([
-      ...(clip.aiTags || []).map(t => t.toLowerCase()),
-      (clip.aiContentType || "").toLowerCase(),
-    ].filter(Boolean));
+    // The clip's words: each tag AND each individual word inside multi-word tags
+    // ("mountain biking" → "mountain biking", "mountain", "biking") + content type.
+    const clipWords = new Set<string>();
+    for (const tag of (clip.aiTags || [])) {
+      const lc = tag.toLowerCase();
+      clipWords.add(lc);
+      for (const w of lc.split(/\s+/)) if (w) clipWords.add(w);
+    }
+    if (clip.aiContentType) clipWords.add(clip.aiContentType.toLowerCase());
+
+    // A keyword matches a clip word if they're equal, or one is a prefix of the
+    // other (≥3 chars). So "biking" matches the word "biking" in "mountain biking",
+    // and "swim" matches "swimming". A scenery clip tagged "mountains" is NOT caught
+    // by "biking" (no shared word) — key on the distinctive word, not the generic one.
+    const matchesWord = (kw: string): boolean => {
+      for (const w of clipWords) {
+        if (w === kw) return true;
+        if (kw.length >= 3 && w.startsWith(kw)) return true;   // swim → swimming
+        if (w.length >= 3 && kw.startsWith(w)) return true;    // swimming → swim
+      }
+      return false;
+    };
 
     // Which folders does this clip match?
     const hits: { folder: string; matched: string }[] = [];
     for (const { folder, terms } of folderToTerms) {
       let matched = "";
       for (const t of terms) {
-        if (clipTerms.has(t)) { matched = t; break; }
+        if (matchesWord(t)) { matched = t; break; }
       }
       if (matched) hits.push({ folder, matched });
     }

@@ -9,7 +9,7 @@ import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from 
 import { buildAutoSort, AutoSortResult } from "@/lib/sorter";
 import { getFolderRules, setFolderRule, protectionForPath, FolderProtection } from "@/lib/folderRules";
 import { getFolderKeywords, setFolderKeywords, FolderKeywords } from "@/lib/folderKeywords";
-import { clearOrganization, getScanStatus, getPushStatus } from "@/lib/clips";
+import { clearOrganization, getScanStatus, getPushStatus, addClipsToExtraFolder } from "@/lib/clips";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -147,8 +147,20 @@ export default function LibraryPage() {
     if (!rootId) { alert("Paste the root Drive folder (the one you imported from) first."); return; }
 
     const moves = clips
-      .filter(c => c.organizedPath && c.organizedPath !== ((c as Clip & { path?: string }).path || "") && c.driveFileId)
-      .map(c => ({ drive_file_id: c.driveFileId, target_path: c.organizedPath, name: c.name, clip_id: c.id }));
+      .filter(c => {
+        if (!c.driveFileId) return false;
+        const real = (c as Clip & { path?: string }).path || "";
+        const homeMove = c.organizedPath && c.organizedPath !== real;
+        const hasExtras = (c.organizedExtraPaths || []).length > 0;
+        return homeMove || hasExtras;
+      })
+      .map(c => ({
+        drive_file_id: c.driveFileId,
+        target_path: c.organizedPath || (c as Clip & { path?: string }).path || "",
+        extra_paths: c.organizedExtraPaths || [],
+        name: c.name,
+        clip_id: c.id,
+      }));
     if (moves.length === 0) { alert("Nothing to push."); return; }
 
     if (!confirm(`Move ${moves.length} files in ${currentClient?.name}'s real Google Drive to match your in-app layout?\n\nFiles are only moved (never deleted). This can't be auto-undone, but you can always re-organize and push again.`)) return;
@@ -493,6 +505,25 @@ export default function LibraryPage() {
     });
   }
 
+  async function addSelectedToFolder(folderPath: string) {
+    if (!folderPath || selectedClipIds.size === 0 || movingBulk) return;
+    setMovingBulk(true);
+    try {
+      const targets = clips
+        .filter(c => c.id && selectedClipIds.has(c.id))
+        .map(c => ({ id: c.id!, current: c.organizedExtraPaths || [] }));
+      const n = await addClipsToExtraFolder(targets, folderPath);
+      await loadClips();
+      setSelectedClipIds(new Set());
+      setBulkTarget("");
+      alert(`✅ Added ${n} clips to ${folderPath} (they stay in their home folder too).`);
+    } catch (err) {
+      alert("Add failed: " + String(err));
+    } finally {
+      setMovingBulk(false);
+    }
+  }
+
   async function moveSelectedTo(folderPath: string) {
     if (!folderPath || selectedClipIds.size === 0 || movingBulk) return;
     setMovingBulk(true);
@@ -648,8 +679,11 @@ export default function LibraryPage() {
     // Effective location = where it's organized to (if moved), else its real Drive path
     const clipPath = clip.organizedPath || (clip as Clip & { path?: string }).path || "";
     // Selecting a folder shows clips DIRECTLY in it (not its subfolders) — so as you
-    // sort a clip into a subfolder, it leaves this view.
-    const matchesDriveFolder = !selectedDriveFolder || clipPath === selectedDriveFolder;
+    // sort a clip into a subfolder, it leaves this view. Also shows clips linked here
+    // via "also add" (multi-folder).
+    const matchesDriveFolder = !selectedDriveFolder
+      || clipPath === selectedDriveFolder
+      || (clip.organizedExtraPaths || []).includes(selectedDriveFolder);
     const q = searchQuery.toLowerCase();
     const matchesSearch = searchQuery === "" ||
       clip.name.toLowerCase().includes(q) ||
@@ -1227,6 +1261,13 @@ export default function LibraryPage() {
                           🗂️ {clip.organizedPath}
                         </div>
                       )}
+                      {(clip.organizedExtraPaths || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {clip.organizedExtraPaths!.map(p => (
+                            <span key={p} className="text-[10px] text-sky-300/80 bg-sky-500/10 rounded px-1.5 py-0.5 truncate">🔗 {p.split("/").pop()}</span>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-1 mb-2">
                         {clip.tags.slice(0, 3).map((tag) => (
                           <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full ${tagColors[tag] || "bg-white/10 text-white/50"}`}>
@@ -1580,8 +1621,17 @@ export default function LibraryPage() {
             onClick={() => moveSelectedTo(bulkTarget.trim())}
             disabled={!bulkTarget.trim() || movingBulk}
             className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-40"
+            title="Move home folder here"
           >
             {movingBulk ? "Moving…" : "Move here"}
+          </button>
+          <button
+            onClick={() => addSelectedToFolder(bulkTarget.trim())}
+            disabled={!bulkTarget.trim() || movingBulk}
+            className="px-3 py-2 rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 text-sm hover:bg-sky-500/20 disabled:opacity-40"
+            title="Also add to this folder (keeps the clip in its current folder too)"
+          >
+            ➕ Also add
           </button>
           <button onClick={() => { setSelectedClipIds(new Set()); setBulkNewFolder(false); }} className="text-white/40 hover:text-white text-lg px-1">✕</button>
         </div>

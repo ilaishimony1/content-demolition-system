@@ -63,7 +63,8 @@ export interface Clip {
   size?: string;
   duration?: string;
   mediaType?: "video" | "image";
-  organizedPath?: string;   // in-app target folder (source of truth before Drive push)
+  organizedPath?: string;   // in-app HOME folder (where the real file goes on push)
+  organizedExtraPaths?: string[]; // also-appears-in folders (become Drive shortcuts on push)
   organizedAt?: string;     // when it was placed
   createdAt?: unknown;
   // AI analysis fields
@@ -156,6 +157,26 @@ export async function moveFolderClips(
     await batch.commit();
   }
   return updates.length;
+}
+
+// Add clips to an ADDITIONAL folder (keeps their home folder). Becomes a Drive
+// shortcut on push. Skips clips already homed/linked there.
+export async function addClipsToExtraFolder(
+  clients: { id: string; current: string[] }[],
+  folder: string
+): Promise<number> {
+  const BATCH = 400;
+  let n = 0;
+  for (let i = 0; i < clients.length; i += BATCH) {
+    const batch = writeBatch(db);
+    for (const c of clients.slice(i, i + BATCH)) {
+      if (c.current.includes(folder)) continue;
+      batch.update(doc(db, "clips", c.id), { organizedExtraPaths: [...c.current, folder] });
+      n++;
+    }
+    await batch.commit();
+  }
+  return n;
 }
 
 // Undo an organization: clear organizedPath on these clips (back into the pile)

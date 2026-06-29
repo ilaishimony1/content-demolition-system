@@ -119,7 +119,7 @@ export default function LibraryPage() {
 
     const moves = clips
       .filter(c => c.organizedPath && c.organizedPath !== ((c as Clip & { path?: string }).path || "") && c.driveFileId)
-      .map(c => ({ drive_file_id: c.driveFileId, target_path: c.organizedPath, name: c.name }));
+      .map(c => ({ drive_file_id: c.driveFileId, target_path: c.organizedPath, name: c.name, clip_id: c.id }));
     if (moves.length === 0) { alert("Nothing to push."); return; }
 
     if (!confirm(`Move ${moves.length} files in ${currentClient?.name}'s real Google Drive to match your in-app layout?\n\nFiles are only moved (never deleted). This can't be auto-undone, but you can always re-organize and push again.`)) return;
@@ -145,7 +145,8 @@ export default function LibraryPage() {
         if (finished) {
           clearInterval(poll);
           setPushing(false);
-          setPushStatusText(`✅ Pushed to Drive — ${done} moved${errs ? `, ${errs} failed` : ""}. Tom's Drive now matches your layout! 🎉`);
+          setPushStatusText(`✅ Pushed to Drive — ${done} moved${errs ? `, ${errs} failed` : ""}. Drive now matches your layout! 🎉`);
+          await loadClips(); // refresh to show settled paths (won't re-push next time)
           await logAgentEvent(selectedClient, { agent: "drive-scanner", type: "push-complete", payload: { moved: done, errors: errs } });
           setTimeout(() => { setPushStatusText(""); setShowPushPreview(false); }, 10000);
         }

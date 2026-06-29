@@ -60,6 +60,8 @@ export default function LibraryPage() {
   const [autoSortBatch, setAutoSortBatch] = useState<string[]>([]);
   const [autoSortBusy, setAutoSortBusy] = useState(false);
   const [showTagManager, setShowTagManager] = useState(false);
+  const [aiSearchIds, setAiSearchIds] = useState<Set<string> | null>(null);
+  const [aiSearching, setAiSearching] = useState(false);
   const [showPushPreview, setShowPushPreview] = useState(false);
   const [pushRootFolder, setPushRootFolder] = useState("");
   const [pushing, setPushing] = useState(false);
@@ -182,6 +184,34 @@ export default function LibraryPage() {
     } catch (err) {
       setPushStatusText("Push failed: " + String(err));
       setPushing(false);
+    }
+  }
+
+  // Natural-language AI search across the clips currently in view
+  async function handleAiSearch() {
+    if (aiSearching) return;
+    const q = searchQuery.trim();
+    if (!q) return;
+    // search the in-scope analysed clips (respect folder/category filters via filteredClips)
+    const pool = filteredClips.filter(c => c.aiAnalysedAt && c.id).slice(0, 1200);
+    if (pool.length === 0) { alert("No scanned clips in view to search. Scan first, or widen the folder."); return; }
+    setAiSearching(true);
+    try {
+      const res = await fetch("/api/agent/find-clips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: q,
+          clips: pool.map(c => ({ id: c.id, name: c.name, tags: c.aiTags || [], topic: c.aiTopic || "" })),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) { alert("Search failed: " + data.error); setAiSearching(false); return; }
+      setAiSearchIds(new Set<string>((data.ids || []).map(String)));
+    } catch (err) {
+      alert("Search failed: " + String(err));
+    } finally {
+      setAiSearching(false);
     }
   }
 
@@ -649,6 +679,11 @@ export default function LibraryPage() {
     return matchesWorkflow && matchesDriveFolder && matchesSearch;
   });
 
+  // When an AI search is active, narrow the view to its matches
+  const displayedClips = aiSearchIds
+    ? filteredClips.filter(c => c.id && aiSearchIds.has(c.id))
+    : filteredClips;
+
   const currentClient = clients.find(c => (c.clientId || c.id) === selectedClient);
 
   const folderCounts = {
@@ -835,13 +870,27 @@ export default function LibraryPage() {
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-sm">🔍</span>
               <input
                 type="text"
-                placeholder="Search by name or tag..."
+                placeholder="Search tags, or ask AI: 'shooting guns', 'posing in front of a mirror'…"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { setSearchQuery(e.target.value); if (aiSearchIds) setAiSearchIds(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleAiSearch(); }}
                 className="w-full bg-[#111118] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-orange-500/50 transition-colors"
               />
             </div>
+            <button
+              onClick={handleAiSearch}
+              disabled={aiSearching || !searchQuery.trim()}
+              className="shrink-0 flex items-center gap-2 px-4 py-2 rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300 text-sm hover:bg-purple-500/20 disabled:opacity-40"
+            >🔮 {aiSearching ? "Searching…" : "Ask AI"}</button>
           </div>
+
+          {/* AI search result banner */}
+          {aiSearchIds && (
+            <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl px-4 py-2.5 flex items-center justify-between">
+              <p className="text-sm text-purple-300">🔮 AI found <b>{displayedClips.length}</b> clips for &quot;{searchQuery}&quot;</p>
+              <button onClick={() => setAiSearchIds(null)} className="text-xs text-white/40 hover:text-white">✕ clear</button>
+            </div>
+          )}
 
           {/* Upload Progress */}
           {uploading && (
@@ -1098,23 +1147,23 @@ export default function LibraryPage() {
           <div className="flex-1">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-medium text-white/60">
-                {filteredClips.length} clips for <span className="text-white">{currentClient?.name}</span>
+                {displayedClips.length} clips for <span className="text-white">{currentClient?.name}</span>
                 {libraryView === "drive" && selectedDriveFolder && <span className="text-orange-400"> / {selectedDriveFolder.split("/").pop()}</span>}
                 {libraryView === "ai" && selectedAiCategory && selectedAiCategory !== "all" && (
                   <span className="text-purple-400"> · {aiCategories.find(c => c.id === selectedAiCategory)?.label}</span>
                 )}
               </h2>
               <div className="flex items-center gap-2">
-                {filteredClips.length > 0 && (
+                {displayedClips.length > 0 && (
                   <button
                     onClick={() => {
-                      const ids = filteredClips.map(c => c.id!).filter(Boolean);
+                      const ids = displayedClips.map(c => c.id!).filter(Boolean);
                       const allSelected = ids.every(id => selectedClipIds.has(id));
                       setSelectedClipIds(allSelected ? new Set() : new Set(ids));
                     }}
                     className="text-xs text-white/50 hover:text-white border border-white/10 rounded-lg px-2 py-1"
                   >
-                    {filteredClips.every(c => c.id && selectedClipIds.has(c.id)) ? "Clear selection" : `Select all ${filteredClips.length}`}
+                    {displayedClips.every(c => c.id && selectedClipIds.has(c.id)) ? "Clear selection" : `Select all ${displayedClips.length}`}
                   </button>
                 )}
                 {libraryView === "ai" && (
@@ -1122,14 +1171,14 @@ export default function LibraryPage() {
                 )}
               </div>
             </div>
-            {filteredClips.length === 0 ? (
+            {displayedClips.length === 0 ? (
               <div className="text-center py-16 text-white/30">
                 <div className="text-4xl mb-3">🎬</div>
-                <p>No clips yet — upload your first B-roll above</p>
+                <p>{aiSearchIds ? "No clips matched that search — try different words." : "No clips yet — upload your first B-roll above"}</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                {filteredClips.map((clip) => (
+                {displayedClips.map((clip) => (
                   <div key={clip.id} className={`bg-[#111118] border rounded-xl overflow-hidden transition-all group ${clip.id && selectedClipIds.has(clip.id) ? "border-orange-500 ring-1 ring-orange-500/50" : "border-white/10 hover:border-orange-500/30"}`}>
                     <div className="aspect-video bg-white/5 flex items-center justify-center relative overflow-hidden">
                       {/* Selection checkbox */}

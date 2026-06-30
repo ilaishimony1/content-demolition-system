@@ -504,23 +504,29 @@ export default function ClientDetailPage() {
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex gap-3">
+          {/* Actions — everything for this client, in one place */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <button
               onClick={() => router.push(`/library?client=${client.clientId || client.id}`)}
-              className="flex-1 bg-[#111118] border border-white/10 hover:border-orange-500/30 text-white py-3 rounded-xl text-sm font-medium transition-all"
+              className="bg-[#111118] border border-white/10 hover:border-orange-500/30 text-white py-3 rounded-xl text-sm font-medium transition-all"
             >
-              🎬 View Library
+              🎬 Library
+            </button>
+            <button
+              onClick={() => router.push(`/inspiration?client=${client.clientId || client.id}`)}
+              className="bg-[#111118] border border-white/10 hover:border-orange-500/30 text-white py-3 rounded-xl text-sm font-medium transition-all"
+            >
+              🔥 Inspiration
             </button>
             <button
               onClick={() => router.push("/production")}
-              className="flex-1 bg-[#111118] border border-white/10 hover:border-orange-500/30 text-white py-3 rounded-xl text-sm font-medium transition-all"
+              className="bg-[#111118] border border-white/10 hover:border-orange-500/30 text-white py-3 rounded-xl text-sm font-medium transition-all"
             >
-              🎯 Production Queue
+              🎯 Production
             </button>
             <button
               onClick={() => router.push(`/clients?edit=${client.id}`)}
-              className="flex-1 bg-orange-500 hover:bg-orange-400 text-white py-3 rounded-xl text-sm font-semibold transition-all"
+              className="bg-orange-500 hover:bg-orange-400 text-white py-3 rounded-xl text-sm font-semibold transition-all"
             >
               ✏️ Edit Client
             </button>

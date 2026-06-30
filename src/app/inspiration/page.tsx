@@ -26,7 +26,11 @@ export default function InspirationPage() {
   useEffect(() => {
     if (user) getClients().then(data => {
       setClients(data);
-      if (data.length && !selectedClient) setSelectedClient(data[0].clientId || data[0].id);
+      // Deep-link: /inspiration?client=<id> opens straight to that client
+      const wanted = new URLSearchParams(window.location.search).get("client");
+      const match = wanted && data.find(c => (c.clientId || c.id) === wanted || c.id === wanted);
+      if (match) setSelectedClient(match.clientId || match.id);
+      else if (data.length && !selectedClient) setSelectedClient(data[0].clientId || data[0].id);
     });
   }, [user]);
 

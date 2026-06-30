@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import {
   InspirationItem, getInspiration, addInspirationLinks, extractReelUrls,
-  setModeled, deleteInspiration,
+  setModeled, deleteInspiration, setInspirationCategory,
 } from "@/lib/inspiration";
 
 export default function InspirationPage() {
@@ -16,6 +16,7 @@ export default function InspirationPage() {
   const [items, setItems] = useState<InspirationItem[]>([]);
   const [paste, setPaste] = useState("");
   const [pasteSource, setPasteSource] = useState<"external" | "own">("external");
+  const [pasteCategory, setPasteCategory] = useState("");
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState<"all" | "todo" | "done">("todo");
 
@@ -41,7 +42,7 @@ export default function InspirationPage() {
     if (urls.length === 0) { alert("No Instagram reel links found in that text."); return; }
     setAdding(true);
     try {
-      const n = await addInspirationLinks(selectedClient, urls, pasteSource);
+      const n = await addInspirationLinks(selectedClient, urls, pasteSource, pasteCategory);
       setPaste("");
       await load();
       alert(`✅ Added ${n} reels${n < urls.length ? ` (${urls.length - n} already saved)` : ""}.`);
@@ -108,18 +109,30 @@ export default function InspirationPage() {
               placeholder="Paste your Doc here — any Instagram reel links get picked up automatically…"
               className="w-full h-28 bg-[#0a0a0f] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/20 outline-none focus:border-orange-500/50 resize-none"
             />
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex gap-1 bg-[#0a0a0f] border border-white/10 rounded-lg p-1 text-xs">
-                {(["external", "own"] as const).map(s => (
-                  <button key={s} onClick={() => setPasteSource(s)}
-                    className={`px-3 py-1.5 rounded-md transition-all ${pasteSource === s ? "bg-orange-500 text-white" : "text-white/50 hover:text-white"}`}>
-                    {s === "external" ? "🌐 Inspiration" : "⭐ Client's own"}
-                  </button>
-                ))}
+            <div className="flex items-center justify-between mt-2 gap-3 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex gap-1 bg-[#0a0a0f] border border-white/10 rounded-lg p-1 text-xs">
+                  {(["external", "own"] as const).map(s => (
+                    <button key={s} onClick={() => setPasteSource(s)}
+                      className={`px-3 py-1.5 rounded-md transition-all ${pasteSource === s ? "bg-orange-500 text-white" : "text-white/50 hover:text-white"}`}>
+                      {s === "external" ? "🌐 Inspiration" : "⭐ Client's own"}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  list="insp-cats"
+                  value={pasteCategory}
+                  onChange={e => setPasteCategory(e.target.value)}
+                  placeholder="📁 Category (e.g. talking hook)…"
+                  className="bg-[#0a0a0f] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-white/20 outline-none focus:border-orange-500/50 w-48"
+                />
+                <datalist id="insp-cats">
+                  {Array.from(new Set(items.map(i => i.category).filter(Boolean))).map(c => <option key={c} value={c!} />)}
+                </datalist>
               </div>
               <button onClick={handleAdd} disabled={adding || !paste.trim()}
                 className="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 disabled:opacity-40">
-                {adding ? "Adding…" : `Add ${extractReelUrls(paste).length || ""} reels`}
+                {adding ? "Adding…" : `Add ${extractReelUrls(paste).length || ""} reels${pasteCategory.trim() ? ` to "${pasteCategory.trim()}"` : ""}`}
               </button>
             </div>
           </div>
@@ -135,31 +148,58 @@ export default function InspirationPage() {
             <span className="text-xs text-white/40">{items.length} saved · {doneCount} modeled</span>
           </div>
 
-          {/* List */}
+          {/* List grouped by category */}
           {shown.length === 0 ? (
             <div className="text-center py-16 text-white/30">
               <div className="text-4xl mb-3">🔥</div>
               <p>{items.length === 0 ? "No reels saved yet — paste some links above" : "Nothing here for this filter"}</p>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {shown.map(item => (
-                <div key={item.id} className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all ${item.modeled ? "border-green-500/30 bg-green-500/5" : "border-white/10 bg-[#111118]"}`}>
-                  <button onClick={() => toggle(item)} title={item.modeled ? "Mark as not modeled" : "Mark as modeled"}
-                    className={`w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0 ${item.modeled ? "bg-green-500 text-white" : "border border-white/20 text-white/40 hover:border-white/40"}`}>
-                    {item.modeled ? "✓" : ""}
-                  </button>
-                  <span className="text-[10px] shrink-0">{item.source === "own" ? "⭐" : "🌐"}</span>
-                  <a href={item.url} target="_blank" rel="noopener noreferrer"
-                    className={`text-sm truncate flex-1 hover:underline ${item.modeled ? "text-green-300/70 line-through" : "text-sky-300"}`}>
-                    {item.url.replace("https://www.instagram.com/", "")}
-                  </a>
-                  {item.note && <span className="text-xs text-white/40 truncate max-w-[200px]">{item.note}</span>}
-                  <button onClick={() => remove(item)} className="text-white/20 hover:text-red-400 text-sm shrink-0">✕</button>
-                </div>
-              ))}
-            </div>
-          )}
+          ) : (() => {
+            const allCats = Array.from(new Set(items.map(i => i.category || "").filter(Boolean))).sort();
+            const groups: [string, InspirationItem[]][] = [];
+            for (const cat of allCats) {
+              const g = shown.filter(i => (i.category || "") === cat);
+              if (g.length) groups.push([cat, g]);
+            }
+            const uncat = shown.filter(i => !i.category);
+            if (uncat.length) groups.push(["Uncategorized", uncat]);
+            return (
+              <div className="space-y-5">
+                {groups.map(([cat, list]) => (
+                  <div key={cat}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-semibold text-orange-300">📁 {cat}</span>
+                      <span className="text-xs text-white/30">{list.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {list.map(item => (
+                        <div key={item.id} className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all ${item.modeled ? "border-green-500/30 bg-green-500/5" : "border-white/10 bg-[#111118]"}`}>
+                          <button onClick={() => toggle(item)} title={item.modeled ? "Mark as not modeled" : "Mark as modeled"}
+                            className={`w-6 h-6 rounded-md flex items-center justify-center text-xs shrink-0 ${item.modeled ? "bg-green-500 text-white" : "border border-white/20 text-white/40 hover:border-white/40"}`}>
+                            {item.modeled ? "✓" : ""}
+                          </button>
+                          <span className="text-[10px] shrink-0">{item.source === "own" ? "⭐" : "🌐"}</span>
+                          <a href={item.url} target="_blank" rel="noopener noreferrer"
+                            className={`text-sm truncate flex-1 hover:underline ${item.modeled ? "text-green-300/70 line-through" : "text-sky-300"}`}>
+                            {item.url.replace("https://www.instagram.com/", "")}
+                          </a>
+                          <select
+                            value={item.category || ""}
+                            onChange={async e => { if (item.id) { await setInspirationCategory(item.id, e.target.value); load(); } }}
+                            className="bg-[#0a0a0f] border border-white/10 rounded px-1.5 py-1 text-[11px] text-white/60 outline-none focus:border-orange-500/40 shrink-0 max-w-[120px]"
+                          >
+                            <option value="">— move —</option>
+                            {allCats.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <button onClick={() => remove(item)} className="text-white/20 hover:text-red-400 text-sm shrink-0">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

@@ -1,5 +1,15 @@
-import { collection, addDoc, getDocs, query, where, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, getDoc, setDoc, query, where, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+// Named tabs (folders) per client — stored so empty ones persist (Doc-like).
+export async function getInspirationCategories(clientId: string): Promise<string[]> {
+  const snap = await getDoc(doc(db, "inspirationCategories", clientId));
+  return snap.exists() ? (snap.data().categories as string[]) || [] : [];
+}
+
+export async function saveInspirationCategories(clientId: string, categories: string[]): Promise<void> {
+  await setDoc(doc(db, "inspirationCategories", clientId), { categories, updatedAt: serverTimestamp() });
+}
 
 /**
  * Inspiration library — reel links the operator saves to MODEL later.

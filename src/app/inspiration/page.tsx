@@ -9,6 +9,7 @@ import {
   InspirationItem, getInspiration, addInspirationLinks, extractReelUrls,
   setModeled, deleteInspiration, setInspirationCategory,
   getInspirationCategories, saveInspirationCategories,
+  saveReelPlan, ReelPlan,
 } from "@/lib/inspiration";
 
 interface Recipe {
@@ -37,7 +38,17 @@ export default function InspirationPage() {
   const [searchedCount, setSearchedCount] = useState<number | null>(null);
 
   function openPlanner(item: InspirationItem) {
-    setModelItem(item); setDesc(""); setRecipe(null); setMatched([]); setSearchedCount(null);
+    setModelItem(item);
+    // If this reel already has a saved plan, restore it instead of a blank form.
+    const p = item.plan;
+    if (p) {
+      setDesc(p.description || "");
+      setRecipe({ clips: p.clips, pacing: p.pacing, music: p.music, captions: p.captions, structure: p.structure, librarySearch: p.librarySearch });
+      setMatched((p.matchedClips || []).map(m => ({ id: m.id, name: m.name, aiTags: m.tags } as Clip)));
+      setSearchedCount(null);
+    } else {
+      setDesc(""); setRecipe(null); setMatched([]); setSearchedCount(null);
+    }
   }
 
   // Fallback: local keyword overlap between the recipe's search query and each
@@ -84,6 +95,17 @@ export default function InspirationPage() {
         // If the AI search found nothing, fall back to local keyword matching.
         if (found.length === 0) found = localMatch(q, analysed);
         setMatched(found);
+        // Persist the plan onto the reel so it survives reopens.
+        if (modelItem?.id) {
+          const plan: ReelPlan = {
+            description: desc,
+            clips: r?.clips, pacing: r?.pacing, music: r?.music, captions: r?.captions,
+            structure: r?.structure, librarySearch: r?.librarySearch,
+            matchedClips: found.map(c => ({ id: String(c.id), name: c.name, tags: c.aiTags })),
+          };
+          await saveReelPlan(modelItem.id, plan);
+          setItems(prev => prev.map(i => i.id === modelItem.id ? { ...i, plan } : i));
+        }
       }
     } finally { setPlanning(false); }
   }
@@ -281,9 +303,9 @@ export default function InspirationPage() {
                     className={`text-sm truncate flex-1 hover:underline ${item.modeled ? "text-green-300/70 line-through" : "text-sky-300"}`}>
                     {item.url.replace("https://www.instagram.com/", "")}
                   </a>
-                  <button onClick={() => openPlanner(item)} title="Model this reel"
-                    className="text-xs shrink-0 px-2 py-1 rounded-md bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 border border-purple-500/30">
-                    🎬 Model
+                  <button onClick={() => openPlanner(item)} title={item.plan ? "View / edit saved plan" : "Model this reel"}
+                    className={`text-xs shrink-0 px-2 py-1 rounded-md border ${item.plan ? "bg-purple-500/30 text-purple-200 border-purple-400/50" : "bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 border-purple-500/30"}`}>
+                    {item.plan ? "🎬 Plan ✓" : "🎬 Model"}
                   </button>
                   <select value={item.category || ""}
                     onChange={async e => { if (item.id) { await setInspirationCategory(item.id, e.target.value); load(); } }}
@@ -315,10 +337,13 @@ export default function InspirationPage() {
             <textarea value={desc} onChange={e => setDesc(e.target.value)}
               placeholder="e.g. 5 fast b-roll clips of training, hard cuts on the beat, bold caption every 2s, hype trap music"
               className="w-full h-20 bg-[#0a0a0f] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/20 outline-none focus:border-purple-500/50 resize-none" />
-            <button onClick={runPlanner} disabled={planning || !desc.trim()}
-              className="mt-2 px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-40">
-              {planning ? "Planning…" : "✨ Build recipe + find clips"}
-            </button>
+            <div className="flex items-center gap-3 mt-2">
+              <button onClick={runPlanner} disabled={planning || !desc.trim()}
+                className="px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-40">
+                {planning ? "Planning…" : recipe ? "↻ Re-build recipe" : "✨ Build recipe + find clips"}
+              </button>
+              {recipe && !planning && <span className="text-xs text-green-400/70">✓ Saved to this reel</span>}
+            </div>
 
             {recipe && (
               <div className="mt-5 space-y-4">

@@ -15,6 +15,18 @@ export async function saveInspirationCategories(clientId: string, categories: st
  * Inspiration library — reel links the operator saves to MODEL later.
  * Replaces the per-client Google Doc. Each item is one reel.
  */
+// A saved modeling plan — the recipe the Planner built + the library clips it matched.
+export interface ReelPlan {
+  description: string;          // what the operator typed to describe the reel
+  clips?: number;
+  pacing?: string;
+  music?: string;
+  captions?: string;
+  structure?: string[];
+  librarySearch?: string;
+  matchedClips?: { id: string; name: string; tags?: string[] }[];
+}
+
 export interface InspirationItem {
   id?: string;
   clientId: string;
@@ -24,7 +36,15 @@ export interface InspirationItem {
   source?: "external" | "own";  // someone else's reel vs the client's own winner
   modeled?: boolean;            // the "green marker" — already recreated
   analysis?: string;           // future: the AI-extracted recipe
+  plan?: ReelPlan;             // saved Reel Planner output (persists between opens)
   createdAt?: unknown;
+}
+
+// Persist the Planner's recipe + matched clips onto the reel so it survives reopens.
+export async function saveReelPlan(id: string, plan: ReelPlan): Promise<void> {
+  // Firestore rejects `undefined` — round-trip through JSON to drop empty fields.
+  const clean = JSON.parse(JSON.stringify(plan));
+  await updateDoc(doc(db, "inspiration", id), { plan: clean });
 }
 
 const IG_RE = /https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p)\/[A-Za-z0-9_-]+/g;

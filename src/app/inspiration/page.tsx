@@ -34,14 +34,28 @@ export default function InspirationPage() {
   const [planning, setPlanning] = useState(false);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [matched, setMatched] = useState<Clip[]>([]);
+  const [searchedCount, setSearchedCount] = useState<number | null>(null);
 
   function openPlanner(item: InspirationItem) {
-    setModelItem(item); setDesc(""); setRecipe(null); setMatched([]);
+    setModelItem(item); setDesc(""); setRecipe(null); setMatched([]); setSearchedCount(null);
+  }
+
+  // Fallback: local keyword overlap between the recipe's search query and each
+  // clip's tags/topic/name — used if the semantic AI search returns nothing.
+  function localMatch(query: string, clips: Clip[]): Clip[] {
+    const words = query.toLowerCase().match(/[a-z]{3,}/g) || [];
+    const stop = new Set(["the","and","clip","clips","reel","video","footage","with","for","from","kind","need","that","this","some"]);
+    const kw = words.filter(w => !stop.has(w));
+    if (!kw.length) return [];
+    return clips.filter(c => {
+      const hay = [...(c.aiTags || []), c.aiTopic || "", c.name || ""].join(" ").toLowerCase();
+      return kw.some(k => hay.includes(k));
+    }).slice(0, 20);
   }
 
   async function runPlanner() {
     if (!desc.trim()) return;
-    setPlanning(true); setRecipe(null); setMatched([]);
+    setPlanning(true); setRecipe(null); setMatched([]); setSearchedCount(null);
     try {
       const res = await fetch("/api/agent/model-reel", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -52,15 +66,24 @@ export default function InspirationPage() {
       // Match the client's tagged library against the recipe's search query.
       const clips = await getClipsByClient(selectedClient);
       const analysed = clips.filter(c => (c.aiTags && c.aiTags.length) || c.aiTopic);
-      if (r?.librarySearch && analysed.length) {
-        const catalogue = analysed.map(c => ({ id: c.id, name: c.name, tags: c.aiTags, topic: c.aiTopic }));
-        const mres = await fetch("/api/agent/find-clips", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: r.librarySearch, clips: catalogue }),
-        });
-        const { ids } = await mres.json();
-        const idset = new Set((ids || []).map(String));
-        setMatched(analysed.filter(c => idset.has(String(c.id))));
+      setSearchedCount(analysed.length);
+      // Query = recipe's librarySearch, falling back to the user's own description.
+      const q = r?.librarySearch || desc;
+      if (analysed.length) {
+        let found: Clip[] = [];
+        try {
+          const catalogue = analysed.map(c => ({ id: c.id, name: c.name, tags: c.aiTags, topic: c.aiTopic }));
+          const mres = await fetch("/api/agent/find-clips", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: q, clips: catalogue }),
+          });
+          const { ids } = await mres.json();
+          const idset = new Set((ids || []).map(String));
+          found = analysed.filter(c => idset.has(String(c.id)));
+        } catch { /* fall through to local */ }
+        // If the AI search found nothing, fall back to local keyword matching.
+        if (found.length === 0) found = localMatch(q, analysed);
+        setMatched(found);
       }
     } finally { setPlanning(false); }
   }
@@ -316,9 +339,14 @@ export default function InspirationPage() {
                 <div>
                   <p className="text-white/40 text-xs mb-2">
                     Matched clips from {currentClient?.name}&apos;s library {matched.length > 0 && `(${matched.length})`}
+                    {searchedCount !== null && <span className="text-white/25"> · searched {searchedCount} scanned clips</span>}
                   </p>
                   {matched.length === 0 ? (
-                    <p className="text-sm text-white/30">No matching clips found in the library yet — scan more footage or refine the description.</p>
+                    <p className="text-sm text-white/30">
+                      {searchedCount === 0
+                        ? "This client has no AI-scanned footage yet — scan their library first, then the Planner can match clips."
+                        : "No matching clips found — try describing the footage differently."}
+                    </p>
                   ) : (
                     <div className="space-y-1">
                       {matched.map(c => (

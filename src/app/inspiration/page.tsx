@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession, signIn } from "next-auth/react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
-import { getClipsByClient, Clip } from "@/lib/clips";
+import { getClipsByClient, getDriveRoot, Clip } from "@/lib/clips";
 import {
   InspirationItem, getInspiration, addInspirationLinks, extractReelUrls,
   setModeled, deleteInspiration, setInspirationCategory,
@@ -19,6 +20,7 @@ interface Recipe {
 
 export default function InspirationPage() {
   const { user, loading } = useAuth();
+  const { data: session } = useSession();
   const [clients, setClients] = useState<ClientData[]>([]);
   const [selectedClient, setSelectedClient] = useState("");
   const [items, setItems] = useState<InspirationItem[]>([]);
@@ -36,19 +38,65 @@ export default function InspirationPage() {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [matched, setMatched] = useState<Clip[]>([]);
   const [searchedCount, setSearchedCount] = useState<number | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [building, setBuilding] = useState(false);
+  const [buildMsg, setBuildMsg] = useState("");
+
+  function togglePick(id: string) {
+    setPicked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
 
   function openPlanner(item: InspirationItem) {
-    setModelItem(item);
+    setModelItem(item); setBuildMsg("");
     // If this reel already has a saved plan, restore it instead of a blank form.
     const p = item.plan;
     if (p) {
       setDesc(p.description || "");
       setRecipe({ clips: p.clips, pacing: p.pacing, music: p.music, captions: p.captions, structure: p.structure, librarySearch: p.librarySearch });
-      setMatched((p.matchedClips || []).map(m => ({ id: m.id, name: m.name, aiTags: m.tags } as Clip)));
+      const mc = (p.matchedClips || []).map(m => ({ id: m.id, name: m.name, aiTags: m.tags } as Clip));
+      setMatched(mc);
+      setPicked(new Set(mc.slice(0, p.clips || 8).map(c => String(c.id))));
       setSearchedCount(null);
     } else {
-      setDesc(""); setRecipe(null); setMatched([]); setSearchedCount(null);
+      setDesc(""); setRecipe(null); setMatched([]); setSearchedCount(null); setPicked(new Set());
     }
+  }
+
+  async function buildRoughCut() {
+    if (!modelItem || picked.size === 0) return;
+    if (!session?.accessToken) { await signIn("google"); return; }
+    setBuilding(true); setBuildMsg("");
+    try {
+      // Re-fetch full clips so we have driveFileId / download URLs for the picks.
+      const all = await getClipsByClient(selectedClient);
+      const chosen = matched
+        .filter(c => picked.has(String(c.id)))                 // keep the recipe order
+        .map(c => all.find(a => String(a.id) === String(c.id)))
+        .filter(Boolean)
+        .map(c => ({ name: c!.name, driveFileId: c!.driveFileId, driveUrl: c!.driveUrl, bunnyUrl: c!.bunnyUrl }));
+      const rootFolderId = await getDriveRoot(selectedClient);
+      const res = await fetch("/api/agent/build-reel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId: selectedClient,
+          clientName: currentClient?.name,
+          title: `Model — ${currentClient?.name}`,
+          sourceUrl: modelItem.url,
+          accessToken: session.accessToken,
+          rootFolderId,
+          clips: chosen,
+          clipSeconds: 2,
+        }),
+      });
+      const data = await res.json();
+      if (data.started) {
+        setBuildMsg(`🎬 Building rough cut from ${chosen.length} clips… it'll appear in the Production Queue in a minute or two.`);
+      } else {
+        setBuildMsg(`⚠️ ${data.error || "Could not start the build."}`);
+      }
+    } catch (e) {
+      setBuildMsg(`⚠️ ${String(e)}`);
+    } finally { setBuilding(false); }
   }
 
   // Fallback: local keyword overlap between the recipe's search query and each
@@ -95,6 +143,8 @@ export default function InspirationPage() {
         // If the AI search found nothing, fall back to local keyword matching.
         if (found.length === 0) found = localMatch(q, analysed);
         setMatched(found);
+        // Pre-select the top clips (up to the recipe's target count) for the rough cut.
+        setPicked(new Set(found.slice(0, r?.clips || 8).map(c => String(c.id))));
         // Persist the plan onto the reel so it survives reopens.
         if (modelItem?.id) {
           const plan: ReelPlan = {
@@ -365,6 +415,7 @@ export default function InspirationPage() {
                   <p className="text-white/40 text-xs mb-2">
                     Matched clips from {currentClient?.name}&apos;s library {matched.length > 0 && `(${matched.length})`}
                     {searchedCount !== null && <span className="text-white/25"> · searched {searchedCount} scanned clips</span>}
+                    {matched.length > 0 && <span className="text-purple-300/70"> · {picked.size} picked for the cut</span>}
                   </p>
                   {matched.length === 0 ? (
                     <p className="text-sm text-white/30">
@@ -373,15 +424,32 @@ export default function InspirationPage() {
                         : "No matching clips found — try describing the footage differently."}
                     </p>
                   ) : (
-                    <div className="space-y-1">
-                      {matched.map(c => (
-                        <div key={c.id} className="flex items-center gap-2 bg-[#0a0a0f] border border-white/10 rounded-lg px-3 py-2 text-sm">
-                          <span className="shrink-0">🎞️</span>
-                          <span className="truncate flex-1">{c.name}</span>
-                          <span className="text-white/30 text-xs truncate max-w-[45%]">{(c.aiTags || []).slice(0, 3).join(", ")}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <>
+                      <p className="text-white/30 text-[11px] mb-1">Tick the clips to include — order top-to-bottom is the cut order.</p>
+                      <div className="space-y-1 max-h-64 overflow-y-auto">
+                        {matched.map(c => {
+                          const on = picked.has(String(c.id));
+                          return (
+                            <button key={c.id} onClick={() => togglePick(String(c.id))}
+                              className={`w-full flex items-center gap-2 rounded-lg border px-3 py-2 text-sm text-left transition-all ${on ? "border-purple-400/50 bg-purple-500/10" : "border-white/10 bg-[#0a0a0f] hover:border-white/20"}`}>
+                              <span className={`w-4 h-4 rounded shrink-0 flex items-center justify-center text-[10px] ${on ? "bg-purple-500 text-white" : "border border-white/20 text-transparent"}`}>✓</span>
+                              <span className="shrink-0">🎞️</span>
+                              <span className="truncate flex-1">{c.name}</span>
+                              <span className="text-white/30 text-xs truncate max-w-[40%]">{(c.aiTags || []).slice(0, 3).join(", ")}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-3 flex-wrap border-t border-white/10 pt-4">
+                        <button onClick={buildRoughCut} disabled={building || picked.size === 0}
+                          className="px-4 py-2 rounded-lg bg-green-500 text-white text-sm font-medium hover:bg-green-600 disabled:opacity-40">
+                          {building ? "Starting…" : `🎬 Build rough cut (${picked.size} clips)`}
+                        </button>
+                        <span className="text-white/40 text-xs">Silent 9:16 cut → Production Queue. Add the 1:1 music + captions after.</span>
+                      </div>
+                      {buildMsg && <p className="mt-3 text-sm text-white/70">{buildMsg}</p>}
+                    </>
                   )}
                 </div>
               </div>

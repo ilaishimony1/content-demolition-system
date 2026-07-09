@@ -12,6 +12,7 @@ const navItems = [
   { id: "clients", label: "Clients", icon: "👥", href: "/clients" },
   { id: "library", label: "B-Roll Library", icon: "🎬", href: "/library" },
   { id: "inspiration", label: "Inspiration Feed", icon: "🔥", href: "/inspiration" },
+  { id: "podcast", label: "Podcast Engine", icon: "🎙️", href: "/podcast" },
   { id: "production", label: "Production Queue", icon: "🎯", href: "/production" },
   { id: "schedule", label: "Schedule", icon: "📅", href: "/schedule" },
   { id: "analytics", label: "Analytics", icon: "📊", href: "/analytics" },

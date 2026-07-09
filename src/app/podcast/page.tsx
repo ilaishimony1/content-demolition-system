@@ -5,6 +5,7 @@ import { useSession, signIn } from "next-auth/react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
+import { getClipsByClient, Clip } from "@/lib/clips";
 import { getTranscribeStatus, getPodcastTriage, formatTimestamp, TriageItem, PodcastTriage } from "@/lib/podcast";
 
 function slugify(s: string): string {
@@ -18,11 +19,9 @@ export default function PodcastPage() {
   const [selectedClient, setSelectedClient] = useState("");
   const [episodeId, setEpisodeId] = useState("");
 
-  // Drive picker
-  const [query, setQuery] = useState("");
-  const [browsing, setBrowsing] = useState(false);
-  const [videos, setVideos] = useState<{ id: string; name: string; size: string; thumbnailLink?: string; folder?: string }[]>([]);
-  const [browseMsg, setBrowseMsg] = useState("");
+  // Episode picker — pulls the client's video clips straight from the library
+  const [clips, setClips] = useState<Clip[]>([]);
+  const [loadingClips, setLoadingClips] = useState(false);
   const [picked, setPicked] = useState<{ id: string; name: string } | null>(null);
 
   const [transcribing, setTranscribing] = useState(false);
@@ -45,23 +44,14 @@ export default function PodcastPage() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  async function browseDrive() {
-    if (!session?.accessToken) { await signIn("google"); return; }
-    setBrowsing(true); setBrowseMsg(""); setVideos([]);
-    try {
-      const res = await fetch("/api/drive-list-videos", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: session.accessToken, query: query.trim() }),
-      });
-      const data = await res.json();
-      if (data.videos) {
-        setVideos(data.videos);
-        if (data.videos.length === 0) setBrowseMsg("No videos found — try a folder name or part of the file name.");
-      } else {
-        setBrowseMsg(`⚠️ ${data.error || "Could not list Drive videos."}`);
-      }
-    } finally { setBrowsing(false); }
-  }
+  // Load the client's video clips from the library whenever the client changes.
+  useEffect(() => {
+    if (!selectedClient) { setClips([]); return; }
+    setLoadingClips(true); setPicked(null);
+    getClipsByClient(selectedClient)
+      .then(all => setClips(all.filter(c => c.mediaType !== "image" && c.driveFileId)))
+      .finally(() => setLoadingClips(false));
+  }, [selectedClient]);
 
   async function startTranscribe() {
     if (!picked || !selectedClient) return;
@@ -148,59 +138,41 @@ export default function PodcastPage() {
             ))}
           </div>
 
-          {/* Drive picker */}
-          <div className="bg-[#111118] border border-white/10 rounded-2xl p-4 space-y-3">
+          {/* Episode picker — the client's video clips, straight from the library */}
+          <div className="space-y-3">
             <p className="text-sm font-medium">
-              Episode for <span className="text-orange-400">{currentClient?.name}</span>
+              Pick an episode for <span className="text-orange-400">{currentClient?.name}</span>
+              <span className="text-white/30"> — from their library</span>
             </p>
-            {!session?.accessToken && (
-              <button onClick={() => signIn("google")} className="text-xs px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                🔑 Connect Google Drive first
-              </button>
-            )}
-            <div className="flex items-center gap-2">
-              <input value={query} onChange={e => setQuery(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") browseDrive(); }}
-                placeholder="Folder name (e.g. podcast test) or part of the file name"
-                className="flex-1 bg-[#0a0a0f] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/20 outline-none focus:border-purple-500/50" />
-              <button onClick={browseDrive} disabled={browsing}
-                className="px-4 py-2 rounded-lg bg-sky-500/80 text-white text-sm font-medium hover:bg-sky-500 disabled:opacity-40 shrink-0">
-                {browsing ? "Loading…" : "📁 Browse Drive"}
-              </button>
-            </div>
-            {browseMsg && (
-              <div className="space-y-2">
-                <p className="text-sm text-white/50">{browseMsg}</p>
-                {/(auth|credential|token|401|403)/i.test(browseMsg) && (
-                  <button onClick={() => signIn("google")}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:bg-sky-500/30">
-                    🔑 Reconnect Google Drive
-                  </button>
-                )}
-              </div>
-            )}
 
-            {/* Thumbnail grid */}
-            {videos.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {videos.map(v => {
-                  const on = picked?.id === v.id;
+            {loadingClips ? (
+              <p className="text-sm text-white/40">Loading clips…</p>
+            ) : clips.length === 0 ? (
+              <p className="text-sm text-white/40">
+                No video clips in {currentClient?.name}&apos;s library yet. Import the episode in the B-Roll Library first (Import from Drive).
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {clips.map(clip => {
+                  const on = picked?.id === clip.driveFileId;
                   return (
-                    <button key={v.id} onClick={() => setPicked({ id: v.id, name: v.name })}
-                      className={`text-left rounded-xl border overflow-hidden transition-all ${on ? "border-purple-400 ring-2 ring-purple-500/40" : "border-white/10 hover:border-white/30"}`}>
-                      <div className="aspect-video bg-[#0a0a0f] flex items-center justify-center overflow-hidden">
-                        {v.thumbnailLink ? (
+                    <button key={clip.id} onClick={() => setPicked({ id: clip.driveFileId!, name: clip.name })}
+                      className={`text-left bg-[#111118] border rounded-xl overflow-hidden transition-all ${on ? "border-orange-500 ring-1 ring-orange-500/50" : "border-white/10 hover:border-orange-500/30"}`}>
+                      <div className="relative aspect-video bg-white/5 flex items-center justify-center overflow-hidden">
+                        {(clip.thumbnailUrl || clip.driveThumbnailUrl) ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={v.thumbnailLink} alt={v.name} referrerPolicy="no-referrer"
+                          <img src={clip.thumbnailUrl || clip.driveThumbnailUrl} alt={clip.name} referrerPolicy="no-referrer"
                             className="w-full h-full object-cover"
                             onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         ) : (
-                          <span className="text-2xl">🎙️</span>
+                          <span className="text-3xl">🎙️</span>
                         )}
+                        <span className="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-600/80">📁 Drive</span>
+                        {on && <span className="absolute top-2 left-2 w-6 h-6 rounded-md bg-orange-500 text-white flex items-center justify-center text-xs">✓</span>}
                       </div>
-                      <div className="p-2">
-                        <p className="text-xs text-white/80 truncate" dir="auto">{v.name}</p>
-                        <p className="text-[10px] text-white/30">{[v.folder, v.size].filter(Boolean).join(" · ")}</p>
+                      <div className="p-2.5">
+                        <p className="text-xs text-white/80 truncate" dir="auto">{clip.name}</p>
+                        {clip.size && <p className="text-[10px] text-white/30 mt-0.5">{clip.size}</p>}
                       </div>
                     </button>
                   );
@@ -210,15 +182,15 @@ export default function PodcastPage() {
 
             {/* Transcribe the picked episode */}
             {picked && (
-              <div className="flex items-center gap-3 border-t border-white/10 pt-3">
+              <div className="bg-[#111118] border border-purple-500/30 rounded-2xl p-4 flex items-center gap-3 flex-wrap">
                 <button onClick={startTranscribe} disabled={transcribing}
                   className="px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-40">
                   {transcribing ? "Transcribing…" : "🎧 Transcribe episode"}
                 </button>
                 <span className="text-xs text-white/50 truncate" dir="auto">{picked.name}</span>
+                {transcribing && <span className="text-xs text-white/40">· {stage}</span>}
               </div>
             )}
-            {transcribing && <p className="text-xs text-white/40">{stage}</p>}
             {transcribeMsg && <p className="text-sm text-white/70">{transcribeMsg}</p>}
           </div>
 

@@ -16,8 +16,14 @@ export default function PodcastPage() {
   const { data: session } = useSession();
   const [clients, setClients] = useState<ClientData[]>([]);
   const [selectedClient, setSelectedClient] = useState("");
-  const [driveFileName, setDriveFileName] = useState("");
   const [episodeId, setEpisodeId] = useState("");
+
+  // Drive picker
+  const [query, setQuery] = useState("");
+  const [browsing, setBrowsing] = useState(false);
+  const [videos, setVideos] = useState<{ id: string; name: string; size: string; thumbnailLink?: string; folder?: string }[]>([]);
+  const [browseMsg, setBrowseMsg] = useState("");
+  const [picked, setPicked] = useState<{ id: string; name: string } | null>(null);
 
   const [transcribing, setTranscribing] = useState(false);
   const [transcribeMsg, setTranscribeMsg] = useState("");
@@ -39,10 +45,28 @@ export default function PodcastPage() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  async function startTranscribe() {
-    if (!driveFileName.trim() || !selectedClient) return;
+  async function browseDrive() {
     if (!session?.accessToken) { await signIn("google"); return; }
-    const eid = episodeId.trim() || slugify(driveFileName);
+    setBrowsing(true); setBrowseMsg(""); setVideos([]);
+    try {
+      const res = await fetch("/api/drive-list-videos", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: session.accessToken, query: query.trim() }),
+      });
+      const data = await res.json();
+      if (data.videos) {
+        setVideos(data.videos);
+        if (data.videos.length === 0) setBrowseMsg("No videos found — try a folder name or part of the file name.");
+      } else {
+        setBrowseMsg(`⚠️ ${data.error || "Could not list Drive videos."}`);
+      }
+    } finally { setBrowsing(false); }
+  }
+
+  async function startTranscribe() {
+    if (!picked || !selectedClient) return;
+    if (!session?.accessToken) { await signIn("google"); return; }
+    const eid = slugify(picked.name);
     setEpisodeId(eid);
     setTranscribing(true); setTranscribeMsg(""); setTriage(null); setStage("starting");
 
@@ -50,7 +74,7 @@ export default function PodcastPage() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         clientId: selectedClient, episodeId: eid, accessToken: session.accessToken,
-        driveFileName: driveFileName.trim(), episodeTitle: driveFileName.trim(),
+        driveFileId: picked.id, episodeTitle: picked.name,
       }),
     });
     const data = await res.json();
@@ -124,7 +148,7 @@ export default function PodcastPage() {
             ))}
           </div>
 
-          {/* Episode input */}
+          {/* Drive picker */}
           <div className="bg-[#111118] border border-white/10 rounded-2xl p-4 space-y-3">
             <p className="text-sm font-medium">
               Episode for <span className="text-orange-400">{currentClient?.name}</span>
@@ -134,16 +158,57 @@ export default function PodcastPage() {
                 🔑 Connect Google Drive first
               </button>
             )}
-            <input value={driveFileName} onChange={e => setDriveFileName(e.target.value)}
-              placeholder="Drive file name (or part of it) — e.g. נמרוד הבדלה ושלו יפרח"
-              className="w-full bg-[#0a0a0f] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/20 outline-none focus:border-purple-500/50" />
-            <div className="flex items-center gap-3">
-              <button onClick={startTranscribe} disabled={transcribing || !driveFileName.trim()}
-                className="px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-40">
-                {transcribing ? "Transcribing…" : "🎧 Transcribe episode"}
+            <div className="flex items-center gap-2">
+              <input value={query} onChange={e => setQuery(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") browseDrive(); }}
+                placeholder="Folder name (e.g. podcast test) or part of the file name"
+                className="flex-1 bg-[#0a0a0f] border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/20 outline-none focus:border-purple-500/50" />
+              <button onClick={browseDrive} disabled={browsing}
+                className="px-4 py-2 rounded-lg bg-sky-500/80 text-white text-sm font-medium hover:bg-sky-500 disabled:opacity-40 shrink-0">
+                {browsing ? "Loading…" : "📁 Browse Drive"}
               </button>
-              {transcribing && <span className="text-xs text-white/40">{stage}</span>}
             </div>
+            {browseMsg && <p className="text-sm text-white/50">{browseMsg}</p>}
+
+            {/* Thumbnail grid */}
+            {videos.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {videos.map(v => {
+                  const on = picked?.id === v.id;
+                  return (
+                    <button key={v.id} onClick={() => setPicked({ id: v.id, name: v.name })}
+                      className={`text-left rounded-xl border overflow-hidden transition-all ${on ? "border-purple-400 ring-2 ring-purple-500/40" : "border-white/10 hover:border-white/30"}`}>
+                      <div className="aspect-video bg-[#0a0a0f] flex items-center justify-center overflow-hidden">
+                        {v.thumbnailLink ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={v.thumbnailLink} alt={v.name} referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        ) : (
+                          <span className="text-2xl">🎙️</span>
+                        )}
+                      </div>
+                      <div className="p-2">
+                        <p className="text-xs text-white/80 truncate" dir="auto">{v.name}</p>
+                        <p className="text-[10px] text-white/30">{[v.folder, v.size].filter(Boolean).join(" · ")}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Transcribe the picked episode */}
+            {picked && (
+              <div className="flex items-center gap-3 border-t border-white/10 pt-3">
+                <button onClick={startTranscribe} disabled={transcribing}
+                  className="px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium hover:bg-purple-600 disabled:opacity-40">
+                  {transcribing ? "Transcribing…" : "🎧 Transcribe episode"}
+                </button>
+                <span className="text-xs text-white/50 truncate" dir="auto">{picked.name}</span>
+              </div>
+            )}
+            {transcribing && <p className="text-xs text-white/40">{stage}</p>}
             {transcribeMsg && <p className="text-sm text-white/70">{transcribeMsg}</p>}
           </div>
 

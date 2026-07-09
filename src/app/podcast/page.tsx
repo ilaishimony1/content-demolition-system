@@ -168,7 +168,17 @@ export default function PodcastPage() {
                 {browsing ? "Loading…" : "📁 Browse Drive"}
               </button>
             </div>
-            {browseMsg && <p className="text-sm text-white/50">{browseMsg}</p>}
+            {browseMsg && (
+              <div className="space-y-2">
+                <p className="text-sm text-white/50">{browseMsg}</p>
+                {/(auth|credential|token|401|403)/i.test(browseMsg) && (
+                  <button onClick={() => signIn("google")}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:bg-sky-500/30">
+                    🔑 Reconnect Google Drive
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Thumbnail grid */}
             {videos.length > 0 && (

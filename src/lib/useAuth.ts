@@ -53,7 +53,12 @@ export function useAuth() {
         let followers: string | undefined;
 
         try {
-          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          // Race against a timeout so a slow/hung Firestore read can never freeze
+          // the app on "Loading…" — proceed with defaults after 8s.
+          const userDoc = await Promise.race([
+            getDoc(doc(db, "users", firebaseUser.uid)),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error("profile read timed out")), 8000)),
+          ]);
           if (userDoc.exists()) {
             const data = userDoc.data();
             role = data.role || "operator";

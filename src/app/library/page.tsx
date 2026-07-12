@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
-import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, saveDriveRoot, getDriveRoot, applyOrganization, moveFolderClips, Clip } from "@/lib/clips";
+import { saveClip, upsertClipsByDriveId, getClipsByClient, saveDriveFolders, getDriveFolders, saveDriveRoot, getDriveRoot, applyOrganization, moveFolderClips, deleteClip, Clip } from "@/lib/clips";
 import { updateAgentMemory, logAgentEvent } from "@/lib/agentMemory";
 import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from "@/lib/taxonomy";
 import { buildAutoSort, AutoSortResult } from "@/lib/sorter";
@@ -332,6 +332,18 @@ export default function LibraryPage() {
   async function loadClips() {
     const data = await getClipsByClient(selectedClient);
     setClips(data);
+  }
+
+  // Remove a clip from the library (Firestore record only — does not touch the real Drive file).
+  async function handleDeleteClip(clip: Clip) {
+    if (!clip.id) return;
+    if (!confirm(`Remove "${clip.name}" from the library?\n\nThis only removes it from the app — it does NOT touch the real Drive file.`)) return;
+    try {
+      await deleteClip(clip.id);
+      setClips(prev => prev.filter(c => c.id !== clip.id));
+    } catch (err) {
+      alert("Delete failed: " + String(err));
+    }
   }
 
   async function loadAllCounts() {
@@ -1290,7 +1302,12 @@ export default function LibraryPage() {
                           ))}
                         </div>
                       )}
-                      {clip.size && <p className="text-xs text-white/30">{clip.size}</p>}
+                      <div className="flex items-center justify-between">
+                        {clip.size ? <p className="text-xs text-white/30">{clip.size}</p> : <span />}
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteClip(clip); }}
+                          title="Remove from library (does not delete the Drive file)"
+                          className="text-xs text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">🗑️</button>
+                      </div>
                     </div>
                   </div>
                 ))}

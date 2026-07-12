@@ -1,5 +1,10 @@
-import { collection, addDoc, getDocs, getDoc, setDoc, query, where, serverTimestamp, writeBatch, doc } from "firebase/firestore";
+import { collection, addDoc, getDocs, getDoc, setDoc, query, where, serverTimestamp, writeBatch, doc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+
+// Delete a single clip record from the library (does NOT touch the real Drive file).
+export async function deleteClip(clipId: string): Promise<void> {
+  await deleteDoc(doc(db, "clips", clipId));
+}
 
 // Persist the full Drive folder structure (incl. empty folders) for a client,
 // so folders like בלאגן stay visible even when they contain no media.

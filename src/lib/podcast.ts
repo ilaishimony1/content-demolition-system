@@ -30,6 +30,19 @@ export interface PodcastTriage {
   triagedAt?: string;
 }
 
+export interface TriageStatus {
+  running?: boolean;
+  windowsDone?: number;
+  windowsTotal?: number;
+  error?: string;
+  updatedAt?: string;
+}
+
+export async function getTriageStatus(episodeId: string): Promise<TriageStatus | null> {
+  const snap = await getDoc(doc(db, "triageStatus", episodeId));
+  return snap.exists() ? (snap.data() as TriageStatus) : null;
+}
+
 export async function getPodcastTriage(episodeId: string): Promise<PodcastTriage | null> {
   const snap = await getDoc(doc(db, "podcastTriage", episodeId));
   if (!snap.exists()) return null;

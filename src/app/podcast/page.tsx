@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/useAuth";
 import Sidebar from "@/components/Sidebar";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { getClipsByClient, Clip } from "@/lib/clips";
-import { getTranscribeStatus, getPodcastTriage, formatTimestamp, TriageItem, PodcastTriage } from "@/lib/podcast";
+import { getTranscribeStatus, getTriageStatus, getPodcastTriage, formatTimestamp, TriageItem, PodcastTriage } from "@/lib/podcast";
 
 function slugify(s: string): string {
   return s.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "episode";
@@ -34,6 +34,7 @@ export default function PodcastPage() {
   const [tab, setTab] = useState<"gold" | "keep" | "cut">("gold");
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const triagePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (user) getClients().then(data => {
@@ -42,7 +43,10 @@ export default function PodcastPage() {
     });
   }, [user]);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (triagePollRef.current) clearInterval(triagePollRef.current);
+  }, []);
 
   // Load the client's video clips from the library whenever the client changes.
   useEffect(() => {
@@ -89,22 +93,38 @@ export default function PodcastPage() {
 
   async function runTriage() {
     if (!episodeId) return;
-    setTriaging(true); setTriageMsg(""); setTriage(null);
+    setTriaging(true); setTriageMsg("Starting…"); setTriage(null);
     try {
       const res = await fetch("/api/agent/triage-podcast", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ episodeId }),
       });
       const data = await res.json();
-      if (data.success) {
-        setTriage({ gold: data.triage.gold || [], keep: data.triage.keep || [], cut: data.triage.cut || [] });
-        setTab("gold");
-      } else {
-        setTriageMsg(`⚠️ ${data.error || data.detail || "Triage failed."}`);
+      if (!data.started) {
+        setTriaging(false);
+        setTriageMsg(`⚠️ ${data.error || "Could not start triage."}`);
+        return;
       }
+      triagePollRef.current = setInterval(async () => {
+        const st = await getTriageStatus(episodeId);
+        if (!st) return;
+        if (st.windowsTotal) setTriageMsg(`Analysing window ${st.windowsDone ?? 0}/${st.windowsTotal}…`);
+        if (st.running === false) {
+          if (triagePollRef.current) clearInterval(triagePollRef.current);
+          setTriaging(false);
+          if (st.error) {
+            setTriageMsg(`⚠️ ${st.error}`);
+          } else {
+            const result = await getPodcastTriage(episodeId);
+            if (result) { setTriage(result); setTab("gold"); setTriageMsg(""); }
+            else setTriageMsg("⚠️ Triage finished but no result was found.");
+          }
+        }
+      }, 3000);
     } catch (e) {
+      setTriaging(false);
       setTriageMsg(`⚠️ ${String(e)}`);
-    } finally { setTriaging(false); }
+    }
   }
 
   if (loading) return <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center"><div className="text-white/40 text-sm">Loading...</div></div>;

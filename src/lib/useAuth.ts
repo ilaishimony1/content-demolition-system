@@ -43,24 +43,28 @@ export function useAuth() {
       if (firebaseUser) {
         setUser(firebaseUser);
 
-        // Fetch role from Firestore
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+        // Fetch role from Firestore. NEVER let a failed/slow read hang the whole
+        // app on "Loading…" — default to operator and move on if it fails.
         let role: "operator" | "client" = "operator";
         let clientId: string | undefined;
         let name: string | undefined;
-
         let instagramConnected: boolean | undefined;
         let profilePhoto: string | undefined;
         let followers: string | undefined;
 
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          role = data.role || "operator";
-          clientId = data.clientId;
-          name = data.name;
-          instagramConnected = data.instagramConnected;
-          profilePhoto = data.profilePhoto;
-          followers = data.followers;
+        try {
+          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            role = data.role || "operator";
+            clientId = data.clientId;
+            name = data.name;
+            instagramConnected = data.instagramConnected;
+            profilePhoto = data.profilePhoto;
+            followers = data.followers;
+          }
+        } catch (err) {
+          console.error("useAuth: failed to load user profile, defaulting to operator", err);
         }
 
         const userProfile: UserProfile = {

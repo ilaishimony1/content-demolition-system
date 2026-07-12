@@ -21,6 +21,7 @@ export interface TriageItem {
   why: string;
   quote?: string;
   rank?: number;
+  speaker?: string;
 }
 
 export interface PodcastTriage {

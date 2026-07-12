@@ -32,6 +32,8 @@ export default function PodcastPage() {
   const [triage, setTriage] = useState<PodcastTriage | null>(null);
   const [triageMsg, setTriageMsg] = useState("");
   const [tab, setTab] = useState<"gold" | "keep" | "cut">("gold");
+  const [speakerFilter, setSpeakerFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"time" | "best">("time");
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const triagePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -228,23 +230,49 @@ export default function PodcastPage() {
           {/* Triage map */}
           {triage && (
             <div className="bg-[#111118] border border-white/10 rounded-2xl p-4">
-              <div className="flex gap-1 bg-[#0a0a0f] border border-white/10 rounded-lg p-1 text-xs w-fit mb-4">
-                {([["gold", `🟢 Gold (${triage.gold.length})`], ["keep", `🟡 Keep (${triage.keep.length})`], ["cut", `🔴 Cut (${triage.cut.length})`]] as const).map(([v, l]) => (
-                  <button key={v} onClick={() => setTab(v)}
-                    className={`px-3 py-1.5 rounded-md transition-all ${tab === v ? "bg-purple-500 text-white" : "text-white/50 hover:text-white"}`}>{l}</button>
-                ))}
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <div className="flex gap-1 bg-[#0a0a0f] border border-white/10 rounded-lg p-1 text-xs w-fit">
+                  {([["gold", `🟢 Gold (${triage.gold.length})`], ["keep", `🟡 Keep (${triage.keep.length})`], ["cut", `🔴 Cut (${triage.cut.length})`]] as const).map(([v, l]) => (
+                    <button key={v} onClick={() => setTab(v)}
+                      className={`px-3 py-1.5 rounded-md transition-all ${tab === v ? "bg-purple-500 text-white" : "text-white/50 hover:text-white"}`}>{l}</button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* Speaker filter */}
+                  <div className="flex gap-1 bg-[#0a0a0f] border border-white/10 rounded-lg p-1 text-xs">
+                    {(["all", "Speaker 1", "Speaker 2"] as const).map(s => (
+                      <button key={s} onClick={() => setSpeakerFilter(s)}
+                        className={`px-3 py-1.5 rounded-md transition-all ${speakerFilter === s ? "bg-orange-500 text-white" : "text-white/50 hover:text-white"}`}>
+                        {s === "all" ? "All" : s}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Sort toggle */}
+                  <div className="flex gap-1 bg-[#0a0a0f] border border-white/10 rounded-lg p-1 text-xs">
+                    {(["time", "best"] as const).map(s => (
+                      <button key={s} onClick={() => setSortBy(s)}
+                        className={`px-3 py-1.5 rounded-md transition-all ${sortBy === s ? "bg-sky-500 text-white" : "text-white/50 hover:text-white"}`}>
+                        {s === "time" ? "🕐 Time" : "⭐ Best"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div className="space-y-2">
                 {list.length === 0 ? (
                   <p className="text-white/30 text-sm">Nothing in this tier.</p>
                 ) : list
+                  .filter(item => speakerFilter === "all" || item.speaker === speakerFilter)
                   .slice()
-                  .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999) || a.start - b.start)
+                  .sort((a, b) => sortBy === "best"
+                    ? (a.rank ?? 999) - (b.rank ?? 999) || a.start - b.start
+                    : a.start - b.start)
                   .map((item, i) => (
                   <div key={i} className="bg-[#0a0a0f] border border-white/10 rounded-lg p-3">
                     <div className="flex items-center gap-2 text-xs text-white/40 mb-1">
                       {item.rank && <span className="text-purple-300 font-medium">#{item.rank}</span>}
                       <span>{formatTimestamp(item.start)} – {formatTimestamp(item.end)}</span>
+                      {item.speaker && <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/60">{item.speaker}</span>}
                     </div>
                     <p className="text-sm text-white/80">{item.why}</p>
                     {item.quote && <p className="text-sm text-orange-200 mt-1" dir="rtl">"{item.quote}"</p>}

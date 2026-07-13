@@ -346,6 +346,24 @@ export default function LibraryPage() {
     }
   }
 
+  async function deleteSelectedClips() {
+    const ids = clips.filter(c => c.id && selectedClipIds.has(c.id)).map(c => c.id!) ;
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} clip${ids.length > 1 ? "s" : ""} from the library?\n\nThis only removes them from the app — it does NOT touch the real Drive files.`)) return;
+    setMovingBulk(true);
+    try {
+      for (const id of ids) await deleteClip(id);
+      const removed = new Set(ids);
+      setClips(prev => prev.filter(c => !(c.id && removed.has(c.id))));
+      setSelectedClipIds(new Set());
+      setBulkNewFolder(false);
+    } catch (err) {
+      alert("Delete failed: " + String(err));
+    } finally {
+      setMovingBulk(false);
+    }
+  }
+
   async function loadAllCounts() {
     const counts: Record<string, number> = {};
     for (const client of clients) {
@@ -1653,6 +1671,15 @@ export default function LibraryPage() {
             title="Also add to this folder (keeps the clip in its current folder too)"
           >
             ➕ Also add
+          </button>
+          <span className="text-white/20">·</span>
+          <button
+            onClick={deleteSelectedClips}
+            disabled={movingBulk}
+            className="px-3 py-2 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-sm hover:bg-red-500/20 disabled:opacity-40"
+            title="Remove selected clips from the app (does NOT touch the real Drive files)"
+          >
+            🗑️ Delete
           </button>
           <button onClick={() => { setSelectedClipIds(new Set()); setBulkNewFolder(false); }} className="text-white/40 hover:text-white text-lg px-1">✕</button>
         </div>

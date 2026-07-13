@@ -22,23 +22,33 @@ async function scanDrive(
 ): Promise<{ files: MediaFile[]; folders: string[] }> {
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
-    fields: "files(id, name, size, mimeType)",
+    fields: "files(id, name, size, mimeType, shortcutDetails(targetId, targetMimeType))",
     pageSize: 1000,
   });
 
   const items = res.data.files || [];
 
   for (const item of items) {
-    if (item.mimeType === "application/vnd.google-apps.folder") {
+    // Resolve Google Drive shortcuts to their real target (folder or file).
+    // Shortcuts have their own mimeType, so an un-resolved shortcut-to-folder
+    // would be skipped entirely (this is why a shortcutted podcast folder scanned empty).
+    let mimeType = item.mimeType;
+    let targetId = item.id;
+    if (item.mimeType === "application/vnd.google-apps.shortcut") {
+      mimeType = item.shortcutDetails?.targetMimeType || undefined;
+      targetId = item.shortcutDetails?.targetId || item.id;
+    }
+
+    if (mimeType === "application/vnd.google-apps.folder") {
       const subPath = folderPath ? `${folderPath}/${item.name}` : item.name!;
       folders.add(subPath); // record folder even if it ends up empty
-      await scanDrive(drive, item.id!, subPath, files, folders);
+      await scanDrive(drive, targetId!, subPath, files, folders);
     } else {
-      const isVideo = item.mimeType?.includes("video/") || VIDEO_RE.test(item.name || "");
-      const isImage = item.mimeType?.includes("image/") || IMAGE_RE.test(item.name || "");
+      const isVideo = mimeType?.includes("video/") || VIDEO_RE.test(item.name || "");
+      const isImage = mimeType?.includes("image/") || IMAGE_RE.test(item.name || "");
       if (isVideo || isImage) {
         files.push({
-          id: item.id!,
+          id: targetId!,
           name: item.name!,
           size: item.size ? `${(parseInt(item.size) / 1024 / 1024).toFixed(1)}MB` : "Unknown",
           path: folderPath,

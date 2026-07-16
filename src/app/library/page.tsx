@@ -757,7 +757,13 @@ export default function LibraryPage() {
     const folder = c.organizedPath || (c as Clip & { path?: string }).path || "(unsorted)";
     dupMap.set(key, [...(dupMap.get(key) || []), folder]);
   }
+  const clipFolder = (c: Clip) => c.organizedPath || (c as Clip & { path?: string }).path || "(unsorted)";
   const dupFolders = (c: Clip) => dupMap.get(`${c.name}||${c.size || ""}`) || [];
+  // ACCIDENTAL = same file appears 2+ times in the SAME folder (Tom's double-uploads → should be removed).
+  const sameFolderCopies = (c: Clip) => dupFolders(c).filter(f => f === clipFolder(c)).length;
+  const isAccidentalDup = (c: Clip) => sameFolderCopies(c) > 1;
+  // INTENTIONAL = same file in different folders (duplicated on purpose to fit two categories → leave it).
+  const isCrossFolderDup = (c: Clip) => dupFolders(c).length > 1 && !isAccidentalDup(c);
 
   // When an AI search is active, narrow the view to its matches
   const scopedClips = aiSearchIds
@@ -767,12 +773,12 @@ export default function LibraryPage() {
   // Photos vs videos toggle (everything not explicitly an image counts as video)
   const videoCount = scopedClips.filter(c => c.mediaType !== "image").length;
   const photoCount = scopedClips.filter(c => c.mediaType === "image").length;
-  const dupCount = scopedClips.filter(c => dupFolders(c).length > 1).length;
+  const dupCount = scopedClips.filter(isAccidentalDup).length;
   const mediaMatched = mediaFilter === "all"
     ? scopedClips
     : scopedClips.filter(c => mediaFilter === "image" ? c.mediaType === "image" : c.mediaType !== "image");
   const displayedClips = dupOnly
-    ? mediaMatched.filter(c => dupFolders(c).length > 1)
+    ? mediaMatched.filter(isAccidentalDup)
     : mediaMatched;
 
   const currentClient = clients.find(c => (c.clientId || c.id) === selectedClient);
@@ -981,14 +987,14 @@ export default function LibraryPage() {
             {/* Duplicates filter — show only clips that appear more than once */}
             <button
               onClick={() => setDupOnly(v => !v)}
-              title="Show only duplicated files (same file appearing 2+ times)"
+              title="Show only ACCIDENTAL duplicates — same file 2+ times in the SAME folder (Tom's double-uploads). Cross-folder dupes are intentional and not counted."
               className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                 dupOnly
-                  ? "bg-amber-500 text-black border-amber-500"
+                  ? "bg-red-500 text-white border-red-500"
                   : "bg-[#111118] text-white/50 hover:text-white border-white/10"
               }`}
             >
-              ⧉ Duplicates ({dupCount})
+              ⧉ Dupes to fix ({dupCount})
             </button>
 
             <div className="flex-1 relative">
@@ -1343,12 +1349,17 @@ export default function LibraryPage() {
                       {clip.mediaType === "image" && (
                         <span className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded bg-black/60">📷 Photo</span>
                       )}
-                      {dupFolders(clip).length > 1 && (
+                      {isAccidentalDup(clip) ? (
                         <span
-                          className="absolute bottom-2 right-2 text-xs px-1.5 py-0.5 rounded bg-amber-500/90 text-black font-semibold cursor-help"
-                          title={`This file appears ${dupFolders(clip).length}× — in: ${[...new Set(dupFolders(clip))].join("  ·  ")}`}
-                        >⧉ {dupFolders(clip).length}</span>
-                      )}
+                          className="absolute bottom-2 right-2 text-xs px-1.5 py-0.5 rounded bg-red-500/90 text-white font-semibold cursor-help"
+                          title={`⚠️ ${sameFolderCopies(clip)} copies in THIS folder — accidental re-upload. Keep one, delete the extras.`}
+                        >⧉ {sameFolderCopies(clip)}✕</span>
+                      ) : isCrossFolderDup(clip) ? (
+                        <span
+                          className="absolute bottom-2 right-2 text-xs px-1.5 py-0.5 rounded bg-white/20 text-white/70 cursor-help"
+                          title={`Same file also in other folders (on purpose): ${[...new Set(dupFolders(clip))].join("  ·  ")}`}
+                        >⧉ {[...new Set(dupFolders(clip))].length}</span>
+                      ) : null}
                     </div>
 
                     <div className="p-3">

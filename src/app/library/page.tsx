@@ -28,6 +28,7 @@ export default function LibraryPage() {
   const [clients, setClients] = useState<ClientData[]>([]);
   const [selectedClient, setSelectedClient] = useState("");
   const [selectedFolder, setSelectedFolder] = useState("all");
+  const [mediaFilter, setMediaFilter] = useState<"all" | "video" | "image">("all");
   const [selectedDriveFolder, setSelectedDriveFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -748,9 +749,16 @@ export default function LibraryPage() {
   });
 
   // When an AI search is active, narrow the view to its matches
-  const displayedClips = aiSearchIds
+  const scopedClips = aiSearchIds
     ? filteredClips.filter(c => c.id && aiSearchIds.has(c.id))
     : filteredClips;
+
+  // Photos vs videos toggle (everything not explicitly an image counts as video)
+  const videoCount = scopedClips.filter(c => c.mediaType !== "image").length;
+  const photoCount = scopedClips.filter(c => c.mediaType === "image").length;
+  const displayedClips = mediaFilter === "all"
+    ? scopedClips
+    : scopedClips.filter(c => mediaFilter === "image" ? c.mediaType === "image" : c.mediaType !== "image");
 
   const currentClient = clients.find(c => (c.clientId || c.id) === selectedClient);
 
@@ -930,6 +938,27 @@ export default function LibraryPage() {
                   }`}
                 >
                   {folder} ({folderCounts[folder as keyof typeof folderCounts]})
+                </button>
+              ))}
+            </div>
+
+            {/* Photos / Videos toggle — makes sorting a mess folder faster */}
+            <div className="flex gap-1 bg-[#111118] border border-white/10 rounded-lg p-1 shrink-0">
+              {([
+                { key: "all", label: "All", count: videoCount + photoCount },
+                { key: "video", label: "🎬 Videos", count: videoCount },
+                { key: "image", label: "📷 Photos", count: photoCount },
+              ] as const).map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => setMediaFilter(m.key)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    mediaFilter === m.key
+                      ? "bg-orange-500 text-white"
+                      : "text-white/50 hover:text-white"
+                  }`}
+                >
+                  {m.label} ({m.count})
                 </button>
               ))}
             </div>

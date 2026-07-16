@@ -29,6 +29,7 @@ export default function LibraryPage() {
   const [selectedClient, setSelectedClient] = useState("");
   const [selectedFolder, setSelectedFolder] = useState("all");
   const [mediaFilter, setMediaFilter] = useState<"all" | "video" | "image">("all");
+  const [dupOnly, setDupOnly] = useState(false);
   const [selectedDriveFolder, setSelectedDriveFolder] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dragOver, setDragOver] = useState(false);
@@ -748,6 +749,16 @@ export default function LibraryPage() {
     return matchesWorkflow && matchesDriveFolder && matchesSearch;
   });
 
+  // Duplicate detection: same file (name+size) appearing 2+ times in this client's library.
+  // Different Drive files that are identical uploads — or the same clip filed into 2 folders on purpose.
+  const dupMap = new Map<string, string[]>();
+  for (const c of clips) {
+    const key = `${c.name}||${c.size || ""}`;
+    const folder = c.organizedPath || (c as Clip & { path?: string }).path || "(unsorted)";
+    dupMap.set(key, [...(dupMap.get(key) || []), folder]);
+  }
+  const dupFolders = (c: Clip) => dupMap.get(`${c.name}||${c.size || ""}`) || [];
+
   // When an AI search is active, narrow the view to its matches
   const scopedClips = aiSearchIds
     ? filteredClips.filter(c => c.id && aiSearchIds.has(c.id))
@@ -756,9 +767,13 @@ export default function LibraryPage() {
   // Photos vs videos toggle (everything not explicitly an image counts as video)
   const videoCount = scopedClips.filter(c => c.mediaType !== "image").length;
   const photoCount = scopedClips.filter(c => c.mediaType === "image").length;
-  const displayedClips = mediaFilter === "all"
+  const dupCount = scopedClips.filter(c => dupFolders(c).length > 1).length;
+  const mediaMatched = mediaFilter === "all"
     ? scopedClips
     : scopedClips.filter(c => mediaFilter === "image" ? c.mediaType === "image" : c.mediaType !== "image");
+  const displayedClips = dupOnly
+    ? mediaMatched.filter(c => dupFolders(c).length > 1)
+    : mediaMatched;
 
   const currentClient = clients.find(c => (c.clientId || c.id) === selectedClient);
 
@@ -962,6 +977,19 @@ export default function LibraryPage() {
                 </button>
               ))}
             </div>
+
+            {/* Duplicates filter — show only clips that appear more than once */}
+            <button
+              onClick={() => setDupOnly(v => !v)}
+              title="Show only duplicated files (same file appearing 2+ times)"
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                dupOnly
+                  ? "bg-amber-500 text-black border-amber-500"
+                  : "bg-[#111118] text-white/50 hover:text-white border-white/10"
+              }`}
+            >
+              ⧉ Duplicates ({dupCount})
+            </button>
 
             <div className="flex-1 relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-sm">🔍</span>
@@ -1314,6 +1342,12 @@ export default function LibraryPage() {
                       )}
                       {clip.mediaType === "image" && (
                         <span className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded bg-black/60">📷 Photo</span>
+                      )}
+                      {dupFolders(clip).length > 1 && (
+                        <span
+                          className="absolute bottom-2 right-2 text-xs px-1.5 py-0.5 rounded bg-amber-500/90 text-black font-semibold cursor-help"
+                          title={`This file appears ${dupFolders(clip).length}× — in: ${[...new Set(dupFolders(clip))].join("  ·  ")}`}
+                        >⧉ {dupFolders(clip).length}</span>
                       )}
                     </div>
 

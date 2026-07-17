@@ -9,7 +9,7 @@ import { getTaxonomy, saveTaxonomy, buildDefaultTaxonomy, ClientTaxonomy } from 
 import { buildAutoSort, AutoSortResult } from "@/lib/sorter";
 import { getFolderRules, setFolderRule, protectionForPath, FolderProtection } from "@/lib/folderRules";
 import { getFolderKeywords, setFolderKeywords, FolderKeywords } from "@/lib/folderKeywords";
-import { clearOrganization, getScanStatus, getPushStatus, addClipsToExtraFolder } from "@/lib/clips";
+import { clearOrganization, getScanStatus, getPushStatus, resetPushStatus, addClipsToExtraFolder } from "@/lib/clips";
 import { getClients, ClientData, getClientColor } from "@/lib/clients";
 import { signIn, useSession } from "next-auth/react";
 
@@ -173,6 +173,9 @@ export default function LibraryPage() {
 
     setPushing(true);
     setPushStatusText(`🚀 Pushing ${moves.length} files to Drive…`);
+    // Clear any prior push status so polling can't read a STALE result and
+    // instantly report "finished" with old numbers.
+    await resetPushStatus(selectedClient, moves.length);
     try {
       const res = await fetch("/api/agent/push-to-drive", {
         method: "POST",

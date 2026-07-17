@@ -46,6 +46,15 @@ export async function getPushStatus(clientId: string): Promise<ScanStatus | null
   return snap.exists() ? (snap.data() as ScanStatus) : null;
 }
 
+// Reset the push status before a new push so polling can't read a STALE prior
+// result (which would instantly report "finished" with old numbers).
+export async function resetPushStatus(clientId: string, total: number): Promise<void> {
+  await setDoc(doc(db, "pushStatus", clientId), {
+    running: true, total, done: 0, errors: 0, lastError: "",
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export interface SyncResult {
   added: number;
   updated: number;

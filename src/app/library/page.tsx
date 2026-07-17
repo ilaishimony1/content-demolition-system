@@ -147,7 +147,13 @@ export default function LibraryPage() {
 
   async function executePush() {
     if (pushing) return;
-    if (!session?.accessToken) { await signIn("google"); return; }
+    // Missing token OR a failed silent refresh → force a clean reconnect instead of
+    // pushing with a dead key (which fails every file with a 401).
+    if (!session?.accessToken || (session as { error?: string }).error === "RefreshAccessTokenError") {
+      alert("Your Google connection expired and needs a quick reconnect. Approve access, then click Execute push again. (Your in-app organization is safe — this only refreshes the Drive key.)");
+      await signIn("google");
+      return;
+    }
     const rootMatch = pushRootFolder.match(/folders\/([a-zA-Z0-9_-]+)/);
     const rootId = (rootMatch ? rootMatch[1] : pushRootFolder).trim();
     if (!rootId) { alert("Paste the root Drive folder (the one you imported from) first."); return; }
@@ -418,7 +424,7 @@ export default function LibraryPage() {
   }
 
   async function handleDriveSync() {
-    if (!session?.accessToken) {
+    if (!session?.accessToken || (session as { error?: string }).error === "RefreshAccessTokenError") {
       await signIn("google");
       return;
     }

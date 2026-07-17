@@ -759,11 +759,27 @@ export default function LibraryPage() {
   }
   const clipFolder = (c: Clip) => c.organizedPath || (c as Clip & { path?: string }).path || "(unsorted)";
   const dupFolders = (c: Clip) => dupMap.get(`${c.name}||${c.size || ""}`) || [];
-  // ACCIDENTAL = same file appears 2+ times in the SAME folder (Tom's double-uploads → should be removed).
   const sameFolderCopies = (c: Clip) => dupFolders(c).filter(f => f === clipFolder(c)).length;
-  const isAccidentalDup = (c: Clip) => sameFolderCopies(c) > 1;
   // INTENTIONAL = same file in different folders (duplicated on purpose to fit two categories → leave it).
-  const isCrossFolderDup = (c: Clip) => dupFolders(c).length > 1 && !isAccidentalDup(c);
+  const isCrossFolderDup = (c: Clip) => dupFolders(c).length > 1 && sameFolderCopies(c) <= 1;
+
+  // Within each same-file + same-folder group, keep ONE (the first) and mark the REST as "extra".
+  // Only the extras get the badge → so you can filter, Select-all, Delete, and always keep one copy.
+  const extraDupIds = new Set<string>();
+  {
+    const byGroup = new Map<string, Clip[]>();
+    for (const c of clips) {
+      if (!c.id) continue;
+      const key = `${c.name}||${c.size || ""}||${clipFolder(c)}`;
+      byGroup.set(key, [...(byGroup.get(key) || []), c]);
+    }
+    for (const group of byGroup.values()) {
+      if (group.length < 2) continue;
+      [...group].sort((a, b) => (a.id || "").localeCompare(b.id || "")).slice(1)
+        .forEach(c => extraDupIds.add(c.id!));
+    }
+  }
+  const isExtraDup = (c: Clip) => !!c.id && extraDupIds.has(c.id);
 
   // When an AI search is active, narrow the view to its matches
   const scopedClips = aiSearchIds
@@ -773,12 +789,12 @@ export default function LibraryPage() {
   // Photos vs videos toggle (everything not explicitly an image counts as video)
   const videoCount = scopedClips.filter(c => c.mediaType !== "image").length;
   const photoCount = scopedClips.filter(c => c.mediaType === "image").length;
-  const dupCount = scopedClips.filter(isAccidentalDup).length;
+  const dupCount = scopedClips.filter(isExtraDup).length;
   const mediaMatched = mediaFilter === "all"
     ? scopedClips
     : scopedClips.filter(c => mediaFilter === "image" ? c.mediaType === "image" : c.mediaType !== "image");
   const displayedClips = dupOnly
-    ? mediaMatched.filter(isAccidentalDup)
+    ? mediaMatched.filter(isExtraDup)
     : mediaMatched;
 
   const currentClient = clients.find(c => (c.clientId || c.id) === selectedClient);
@@ -987,14 +1003,14 @@ export default function LibraryPage() {
             {/* Duplicates filter — show only clips that appear more than once */}
             <button
               onClick={() => setDupOnly(v => !v)}
-              title="Show only ACCIDENTAL duplicates — same file 2+ times in the SAME folder (Tom's double-uploads). Cross-folder dupes are intentional and not counted."
+              title="Show only the EXTRA copies (same file, same folder) — one clean copy of each is kept off this list. Turn on → Select all → Delete = safely leaves one of each."
               className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                 dupOnly
                   ? "bg-red-500 text-white border-red-500"
                   : "bg-[#111118] text-white/50 hover:text-white border-white/10"
               }`}
             >
-              ⧉ Dupes to fix ({dupCount})
+              ⧉ Extra copies ({dupCount})
             </button>
 
             <div className="flex-1 relative">
@@ -1349,10 +1365,10 @@ export default function LibraryPage() {
                       {clip.mediaType === "image" && (
                         <span className="absolute bottom-2 left-2 text-xs px-1.5 py-0.5 rounded bg-black/60">📷 Photo</span>
                       )}
-                      {isAccidentalDup(clip) ? (
+                      {isExtraDup(clip) ? (
                         <span
                           className="absolute bottom-2 right-2 text-xs px-1.5 py-0.5 rounded bg-red-500/90 text-white font-semibold cursor-help"
-                          title={`⚠️ ${sameFolderCopies(clip)} copies in THIS folder — accidental re-upload. Keep one, delete the extras.`}
+                          title={`Extra copy (${sameFolderCopies(clip)}× in this folder) — safe to delete. One clean copy is kept.`}
                         >⧉ {sameFolderCopies(clip)}✕</span>
                       ) : isCrossFolderDup(clip) ? (
                         <span

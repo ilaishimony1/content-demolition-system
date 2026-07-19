@@ -6,11 +6,10 @@ import { useAuth } from "@/lib/useAuth";
 import {
   schedulePost, getScheduledPosts, deleteScheduledPost, ScheduledPost,
 } from "@/lib/schedule";
+import { getClients, ClientData } from "@/lib/clients";
 
 // Maayan's "ready reels" folder (weekly subfolders live inside). Editable in the UI.
 const DEFAULT_REELS_FOLDER = "1BD3zjGedpNy_X6ce8AiTas0hHxckzcYz";
-// v1 posts to Ilai's own connected Instagram.
-const ACCOUNT_ID = "ilai";
 
 type Reel = { id: string; name: string; size: string; thumbnailLink?: string; week: string };
 
@@ -24,6 +23,11 @@ export default function SchedulePage() {
   const [loadError, setLoadError] = useState("");
   const [queue, setQueue] = useState<ScheduledPost[]>([]);
 
+  // Which connected Instagram account we post to
+  const [clients, setClients] = useState<ClientData[]>([]);
+  const [account, setAccount] = useState("");   // selected clientId
+  const [postingId, setPostingId] = useState<string | null>(null);
+
   // Per-reel drafts (caption + when)
   const [drafts, setDrafts] = useState<Record<string, { caption: string; when: string }>>({});
   const setDraft = (id: string, patch: Partial<{ caption: string; when: string }>) =>
@@ -32,11 +36,22 @@ export default function SchedulePage() {
       return { ...d, [id]: { ...cur, ...patch } };
     });
 
-  const refreshQueue = useCallback(async () => {
-    setQueue(await getScheduledPosts(ACCOUNT_ID));
+  const refreshQueue = useCallback(async (acct: string) => {
+    if (!acct) { setQueue([]); return; }
+    setQueue(await getScheduledPosts(acct));
   }, []);
 
-  useEffect(() => { if (user) refreshQueue(); }, [user, refreshQueue]);
+  // Load connected accounts once
+  useEffect(() => {
+    if (!user) return;
+    getClients().then(cs => {
+      const connected = cs.filter(c => c.instagramConnected);
+      setClients(connected);
+      setAccount(prev => prev || connected[0]?.clientId || connected[0]?.id || "");
+    });
+  }, [user]);
+
+  useEffect(() => { if (user && account) refreshQueue(account); }, [user, account, refreshQueue]);
 
   async function loadReels() {
     if (!session?.accessToken || (session as { error?: string }).error === "RefreshAccessTokenError") {
@@ -64,11 +79,12 @@ export default function SchedulePage() {
   const unscheduled = reels.filter(r => !queuedIds.has(r.id));
 
   async function handleSchedule(reel: Reel) {
+    if (!account) { alert("Pick which Instagram account to post to first."); return; }
     const d = drafts[reel.id];
     if (!d?.when) { alert("Pick a date & time first."); return; }
     if (new Date(d.when).getTime() < Date.now()) { alert("That time is in the past — pick a future time."); return; }
     await schedulePost({
-      clientId: ACCOUNT_ID,
+      clientId: account,
       driveFileId: reel.id,
       name: reel.name,
       thumbnailLink: reel.thumbnailLink,
@@ -76,13 +92,37 @@ export default function SchedulePage() {
       scheduledFor: new Date(d.when).toISOString(),
     });
     setDrafts(prev => { const n = { ...prev }; delete n[reel.id]; return n; });
-    await refreshQueue();
+    await refreshQueue(account);
+  }
+
+  // Test path: publish a reel to Instagram RIGHT NOW (goes live immediately).
+  async function postNow(reel: Reel) {
+    if (!account) { alert("Pick which Instagram account to post to first."); return; }
+    if (!session?.accessToken) { await signIn("google"); return; }
+    const acctName = clients.find(c => (c.clientId || c.id) === account)?.name || account;
+    const caption = (drafts[reel.id]?.caption || "").trim();
+    if (!confirm(`Post "${reel.name}" to ${acctName}'s Instagram RIGHT NOW?\n\nIt goes live immediately (no draft mode). Takes ~1-3 min to process.`)) return;
+    setPostingId(reel.id);
+    try {
+      const res = await fetch("/api/agent/publish-reel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: account, driveFileId: reel.id, caption, accessToken: session.accessToken }),
+      });
+      const data = await res.json();
+      if (data.error) { alert("Couldn't start the post: " + data.error); return; }
+      alert("🚀 Posting started! Instagram is processing the reel — it'll appear on the account in ~1-3 minutes. (If it doesn't show up, tell Claude to check the status.)");
+    } catch (e) {
+      alert("Post failed: " + String(e));
+    } finally {
+      setPostingId(null);
+    }
   }
 
   async function removeFromQueue(id: string) {
     if (!confirm("Remove this from the schedule? (If it already posted, this won't un-post it.)")) return;
     await deleteScheduledPost(id);
-    await refreshQueue();
+    await refreshQueue(account);
   }
 
   const byWeek = unscheduled.reduce<Record<string, Reel[]>>((acc, r) => {
@@ -98,9 +138,25 @@ export default function SchedulePage() {
 
   return (
     <div className="p-6 md:p-8 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">📅 Reel Scheduler</h1>
-        <p className="text-white/50 text-sm">Review Maayan&apos;s finished reels, set a date/time + caption, and auto-post to Instagram.</p>
+      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold">📅 Reel Scheduler</h1>
+          <p className="text-white/50 text-sm">Review Maayan&apos;s finished reels, set a date/time + caption, and auto-post to Instagram.</p>
+        </div>
+        {/* Which connected account posts */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-white/40">Post to:</span>
+          <select
+            value={account}
+            onChange={e => setAccount(e.target.value)}
+            className="bg-[#111118] border border-white/10 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500/50"
+          >
+            {clients.length === 0 && <option value="">No connected accounts</option>}
+            {clients.map(c => (
+              <option key={c.id} value={c.clientId || c.id}>📸 {c.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Folder + load */}
@@ -180,10 +236,18 @@ export default function SchedulePage() {
                         onChange={e => setDraft(reel.id, { when: e.target.value })}
                         className="w-full bg-[#0b0b10] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-orange-500/50"
                       />
-                      <button
-                        onClick={() => handleSchedule(reel)}
-                        className="w-full px-3 py-2 rounded-lg bg-orange-500 text-white text-xs font-medium hover:bg-orange-600"
-                      >📅 Schedule</button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSchedule(reel)}
+                          className="flex-1 px-3 py-2 rounded-lg bg-orange-500 text-white text-xs font-medium hover:bg-orange-600"
+                        >📅 Schedule</button>
+                        <button
+                          onClick={() => postNow(reel)}
+                          disabled={postingId === reel.id}
+                          title="Publish this reel to Instagram right now (goes live immediately)"
+                          className="px-3 py-2 rounded-lg border border-green-500/40 bg-green-500/10 text-green-300 text-xs font-medium hover:bg-green-500/20 disabled:opacity-40"
+                        >{postingId === reel.id ? "…" : "🚀 Post now"}</button>
+                      </div>
                     </div>
                   </div>
                 );

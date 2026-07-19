@@ -432,6 +432,12 @@ export default function ClientDetailPage() {
                     </div>
                   )}
 
+                  {p.connected && p.connectUrl && (
+                    <a href={p.connectUrl} className="block w-full text-center border border-white/10 text-white/50 hover:text-white hover:border-white/30 py-2 rounded-xl text-xs font-medium transition-all">
+                      ↻ Reconnect (refresh photo, reels &amp; posting)
+                    </a>
+                  )}
+
                   {!p.connected && (
                     p.connectUrl ? (
                       <a href={p.connectUrl} className="block w-full text-center bg-gradient-to-r from-pink-500 to-purple-600 hover:opacity-90 text-white py-2 rounded-xl text-xs font-semibold transition-all">

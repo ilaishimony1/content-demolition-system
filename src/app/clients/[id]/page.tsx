@@ -47,7 +47,7 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<Client | null>(null);
   const [clipCount, setClipCount] = useState(0);
   const [reelCount, setReelCount] = useState(0);
-  const [activeTab, setActiveTab] = useState<"overview" | "analytics">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "instagram" | "tiktok" | "youtube">("overview");
   // Analytics state
   const [posts, setPosts] = useState<AnalyticsPost[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
@@ -125,7 +125,7 @@ export default function ClientDetailPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (activeTab === "analytics" && client?.clientId && client.instagramConnected && posts.length === 0) {
+    if (activeTab === "instagram" && client?.clientId && client.instagramConnected && posts.length === 0) {
       loadFeed(client.clientId);
     }
   }, [activeTab, client]);
@@ -181,10 +181,15 @@ export default function ClientDetailPage() {
           <h1 className="text-xl font-bold">{client.name}</h1>
           {/* Tab switcher */}
           <div className="flex gap-1 bg-white/5 rounded-lg p-1 ml-4">
-            {(["overview", "analytics"] as const).map(t => (
+            {([
+              { t: "overview", label: "👤 Overview" },
+              { t: "instagram", label: "📸 Instagram" },
+              { t: "tiktok", label: "🎵 TikTok" },
+              { t: "youtube", label: "▶️ YouTube" },
+            ] as const).map(({ t, label }) => (
               <button key={t} onClick={() => setActiveTab(t)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-all capitalize ${activeTab === t ? "bg-orange-500 text-white" : "text-white/40 hover:text-white"}`}>
-                {t === "analytics" ? "📊 Analytics" : "👤 Overview"}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${activeTab === t ? "bg-orange-500 text-white" : "text-white/40 hover:text-white"}`}>
+                {label}
               </button>
             ))}
           </div>
@@ -195,15 +200,33 @@ export default function ClientDetailPage() {
         </div>
 
         <div className="p-4 md:p-8 space-y-6">
-          {activeTab === "analytics" && (
+          {activeTab === "instagram" && (
             <div className="space-y-4">
               {!client.instagramConnected ? (
                 <div className="text-center py-16 bg-[#111118] border border-white/10 rounded-2xl text-white/40">
                   <div className="text-4xl mb-3">📸</div>
-                  <p>Connect {client.name}&apos;s Instagram first to see analytics</p>
+                  <p>Connect {client.name}&apos;s Instagram first to see their page</p>
                 </div>
               ) : (
                 <>
+                  {/* Instagram-style profile header */}
+                  <div className="flex items-center gap-5 bg-[#111118] border border-white/10 rounded-2xl p-5">
+                    {client.profilePhoto
+                      ? <img src={client.profilePhoto} alt={client.instagramUsername} className="w-20 h-20 rounded-full object-cover border-2 border-white/10" />
+                      : <div className="w-20 h-20 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center text-2xl">📸</div>}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-lg font-semibold truncate">@{client.instagramUsername || client.name}</p>
+                        <a href={`https://instagram.com/${client.instagramUsername || ""}`} target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] px-2 py-0.5 rounded-full border border-white/15 text-white/50 hover:text-white">Open in IG ↗</a>
+                      </div>
+                      <div className="flex gap-6 mt-2 text-sm">
+                        <span><b>{posts.length}</b> <span className="text-white/40">posts</span></span>
+                        {client.followers && <span><b>{client.followers}</b> <span className="text-white/40">followers</span></span>}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* AI Chat Bar */}
                   <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-2xl p-4">
                     <div className="flex gap-2">
@@ -369,6 +392,14 @@ export default function ClientDetailPage() {
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {(activeTab === "tiktok" || activeTab === "youtube") && (
+            <div className="text-center py-20 bg-[#111118] border border-white/10 rounded-2xl text-white/40">
+              <div className="text-4xl mb-3">{activeTab === "tiktok" ? "🎵" : "▶️"}</div>
+              <p className="font-medium text-white/60">{activeTab === "tiktok" ? "TikTok" : "YouTube Shorts"} — coming soon</p>
+              <p className="text-xs mt-1">Once connected, {client.name}&apos;s {activeTab === "tiktok" ? "TikTok" : "YouTube"} page + analytics will show here, just like Instagram.</p>
             </div>
           )}
 

@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   try {
     // 1. Fetch recent media
     const mediaRes = await fetch(
-      `https://graph.instagram.com/v19.0/${igUserId}/media?fields=id,caption,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=30&access_token=${token}`
+      `https://graph.instagram.com/v19.0/me/media?fields=id,caption,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=30&access_token=${token}`
     );
     const mediaData = await mediaRes.json();
 

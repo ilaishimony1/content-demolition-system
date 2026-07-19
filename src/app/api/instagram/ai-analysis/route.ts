@@ -126,6 +126,7 @@ export async function GET(req: NextRequest) {
 
     const validPosts = postsWithInsights.filter(Boolean);
     const sorted = [...validPosts].sort((a, b) => {
+      if (sortBy === "recent") return new Date(b!.timestamp as string).getTime() - new Date(a!.timestamp as string).getTime();
       if (sortBy === "likes") return b!.likes - a!.likes;
       if (sortBy === "saves") return b!.saves - a!.saves;
       if (sortBy === "reach") return b!.reach - a!.reach;

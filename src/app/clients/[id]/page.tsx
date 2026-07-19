@@ -51,9 +51,9 @@ export default function ClientDetailPage() {
   // Analytics state
   const [posts, setPosts] = useState<AnalyticsPost[]>([]);
   const [postsLoading, setPostsLoading] = useState(false);
-  const [dateRange, setDateRange] = useState("1m");
+  const [dateRange, setDateRange] = useState("all");
   const [contentType, setContentType] = useState("all");
-  const [sortBy, setSortBy] = useState("engagementRate");
+  const [sortBy, setSortBy] = useState("recent");
   const [freePrompt, setFreePrompt] = useState("");
   const [freeAnswer, setFreeAnswer] = useState("");
   const [freeLoading, setFreeLoading] = useState(false);
@@ -267,7 +267,7 @@ export default function ClientDetailPage() {
                     </div>
                     <div className="flex flex-wrap gap-1.5 items-center ml-auto">
                       <span className="text-xs text-white/30 mr-1">Sort</span>
-                      {[{v:"likes",l:"Likes"},{v:"saves",l:"Saves"},{v:"reach",l:"Reach"},{v:"engagementRate",l:"Shares"}].map(o => (
+                      {[{v:"recent",l:"Recent"},{v:"likes",l:"Likes"},{v:"saves",l:"Saves"},{v:"reach",l:"Reach"},{v:"engagementRate",l:"Shares"}].map(o => (
                         <button key={o.v} onClick={() => { setSortBy(o.v); if (client.clientId) loadFeed(client.clientId, dateRange, contentType, o.v); }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${sortBy===o.v?"bg-orange-500 text-white":"bg-white/5 text-white/50 hover:bg-white/10"}`}>{o.l}</button>
                       ))}

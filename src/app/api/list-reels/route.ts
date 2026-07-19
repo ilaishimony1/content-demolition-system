@@ -48,30 +48,29 @@ export async function POST(req: NextRequest) {
       }
     };
 
-    // Videos sitting directly in the root folder → week "כללי"
-    const rootVids = await drive.files.list({
-      q: `'${rootId}' in parents and trashed = false and mimeType contains 'video/'`,
-      fields: "files(id, name, size, thumbnailLink, createdTime)",
-      pageSize: 500,
-      orderBy: "createdTime desc",
-    });
-    pushVideos(rootVids.data.files || [], "כללי");
-
-    // Weekly subfolders → list videos in each
-    const subFolders = await drive.files.list({
-      q: `'${rootId}' in parents and trashed = false and mimeType = 'application/vnd.google-apps.folder'`,
-      fields: "files(id, name)",
-      pageSize: 100,
-    });
-    for (const sub of subFolders.data.files || []) {
-      const vids = await drive.files.list({
-        q: `'${sub.id}' in parents and trashed = false and mimeType contains 'video/'`,
-        fields: "files(id, name, size, thumbnailLink, createdTime)",
-        pageSize: 500,
+    // Recursively walk the whole folder tree (Maayan nests reels as
+    // ready-reels → week → client → reel, so a 1-level scan misses them).
+    // Each video is labelled with its immediate parent folder name.
+    async function walk(folderId: string, label: string, depth: number) {
+      if (depth > 6) return; // safety
+      const res = await drive.files.list({
+        q: `'${folderId}' in parents and trashed = false`,
+        fields: "files(id, name, size, thumbnailLink, createdTime, mimeType, shortcutDetails(targetId, targetMimeType))",
+        pageSize: 1000,
         orderBy: "createdTime desc",
       });
-      pushVideos(vids.data.files || [], sub.name || "");
+      const items = res.data.files || [];
+      const vids = items.filter(f => (f.mimeType || "").includes("video/"));
+      pushVideos(vids, label);
+      const folders = items.filter(f =>
+        f.mimeType === "application/vnd.google-apps.folder" ||
+        (f.mimeType === "application/vnd.google-apps.shortcut" && f.shortcutDetails?.targetMimeType === "application/vnd.google-apps.folder"));
+      for (const sub of folders) {
+        const targetId = sub.mimeType === "application/vnd.google-apps.shortcut" ? sub.shortcutDetails?.targetId : sub.id;
+        if (targetId) await walk(targetId, sub.name || label, depth + 1);
+      }
     }
+    await walk(rootId, "כללי", 0);
 
     return NextResponse.json({ success: true, reels, folderId: rootId });
   } catch (err) {
